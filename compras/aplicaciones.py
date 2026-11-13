@@ -257,18 +257,37 @@ def piezas_para(texto):
     return {tipo: list(partidas.values()) for tipo, partidas in grupos.items()}
 
 
+def coincide(anio, armadora=None, modelo=None, litros=None, prefijo=""):
+    """Filtro Q para un vehículo elegido en el selector. Sirve para AplicacionProveedor y para
+    catalogo.Vehiculo (con prefijo, ej. "aplicaciones__vehiculo__"). El modelo es el modelo base
+    (Tsuru incluye Tsuru II y Tsuru III). Si el texto no decía motor, la pieza se considera válida."""
+    from django.db.models import Q
+
+    f = lambda campo: prefijo + campo  # noqa: E731
+    q = Q(**{f("anio_desde__lte"): anio, f("anio_hasta__gte"): anio})
+    if armadora:
+        q &= Q(**{f("armadora"): armadora})
+    if modelo:
+        q &= Q(**{f("modelo__istartswith"): modelo})
+    if litros:
+        q &= Q(**{f("motor__contains"): litros}) | Q(**{f("motor"): ""})
+    return q
+
+
 def opciones(anio, armadora=None, modelo=None):
-    """Opciones del selector de vehículo del mostrador (año › armadora › modelo › motor), las más
+    """Opciones del selector de vehículo del mostrador (año › armadora › modelo › litros), las más
     comunes primero. Devuelve [(valor, partidas que le quedan), ...]."""
     from django.db.models import Count
 
     from .models import AplicacionProveedor
 
-    qs = AplicacionProveedor.objects.filter(anio_desde__lte=anio, anio_hasta__gte=anio)
-    campo = "armadora"
-    if armadora:
-        qs, campo = qs.filter(armadora=armadora), "modelo_base"
-    if armadora and modelo:
-        qs, campo = qs.filter(modelo_base=modelo), "motor"
+    qs = AplicacionProveedor.objects.filter(coincide(anio, armadora, modelo))
+    if armadora and modelo:  # último paso: litros del motor ("1.6"), sin contar textos sin motor
+        cuenta = {}
+        for motor, partida in qs.exclude(motor="").values_list("motor", "partida_id").distinct():
+            for litros in DISP_RE.findall(motor):
+                cuenta.setdefault(litros, set()).add(partida)
+        return sorted(((k, len(v)) for k, v in cuenta.items()), key=lambda x: (-x[1], x[0]))
+    campo = "modelo_base" if armadora else "armadora"
     filas = qs.values(campo).annotate(n=Count("partida", distinct=True)).order_by("-n", campo)
     return [(f[campo], f["n"]) for f in filas]

@@ -129,7 +129,7 @@ class BuscarPorVehiculoTests(TestCase):
     def test_selector_del_mostrador(self):
         self.assertEqual(opciones(2003), [("Nissan", 3), ("Volkswagen", 1)])
         self.assertEqual(opciones(2003, "Nissan"), [("Tsuru", 3)])
-        self.assertEqual(opciones(2003, "Nissan", "Tsuru"), [("L4 1.6 L", 3)])
+        self.assertEqual(opciones(2003, "Nissan", "Tsuru"), [("1.6", 3)])
 
     def test_al_surtir_la_pieza_pasa_al_catalogo_con_sus_vehiculos(self):
         producto = agregar_a_catalogo(PartidaListaProveedor.objects.get(codigo="GP-37"))
