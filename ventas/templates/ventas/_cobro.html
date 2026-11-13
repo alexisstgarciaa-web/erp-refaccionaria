@@ -1,0 +1,27 @@
+{% load erp %}
+<div class="barra-cobro" role="region" aria-label="Cobro"><div class="dentro">
+  <div class="cobro-resumen">
+    <b>{{ cliente }}</b>
+    <span>{% if piezas %}{{ piezas|cant }} pieza{{ piezas|pluralize }} para hoy{% else %}Sin piezas para hoy{% endif %}{% if pedido_n %} · {{ pedido_n }} sobre pedido por {{ pedido_total|pesos }}{% endif %}</span>
+  </div>
+  <div class="cobro-total">
+    <span>Total a cobrar</span>
+    <b>{{ total|pesos }}</b>
+    <small>IVA incluido {{ iva|pesos }}</small>
+  </div>
+  <form method="post" action="{% url 'ticket_cobrar' %}" class="cobro-accion">{% csrf_token %}
+    <input type="hidden" name="next" value="{{ aqui }}">
+    {% for k, v in base.items %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+    <fieldset class="pagos">
+      <legend class="sr">Forma de pago</legend>
+      {% for fp in pagos %}
+        <label><input type="radio" name="forma_pago" value="{{ fp.value }}"{% if forloop.first %} checked{% endif %}><span>{{ fp.label }}</span></label>
+      {% endfor %}
+    </fieldset>
+    {% if turno %}
+      <button class="cobrar" type="submit"{% if not lineas %} disabled{% endif %}>{% if total %}Cobrar {{ total|pesos }}{% elif lineas %}Registrar pedido{% else %}Cobrar{% endif %}</button>
+    {% else %}
+      <a class="cobrar" href="{% url 'caja' %}">Abrir caja para cobrar</a>
+    {% endif %}
+  </form>
+</div></div>

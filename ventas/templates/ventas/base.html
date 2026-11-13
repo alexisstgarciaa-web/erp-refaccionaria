@@ -1,45 +1,46 @@
 {% load static %}<!doctype html>
-<html lang="es">
+<html lang="es" data-estilo="{{ estilo.clave }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block titulo %}Mostrador{% endblock %} · {{ negocio }}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?{{ estilo.fuentes }}&display=swap">
 <link rel="stylesheet" href="{% static 'ventas/erp.css' %}">
 </head>
-<body>
-<header>
+<body class="{% block cuerpo %}{% endblock %}">
+{% if user.is_authenticated %}
+<div class="prueba-estilos"><div class="dentro">
+  <span>Estilo a prueba, elige el que más te guste:</span>
+  {% for clave, nombre in estilos %}<a href="{% url 'estilo' clave %}?next={{ request.get_full_path|urlencode }}"{% if clave == estilo.clave %} aria-current="true"{% endif %}>{{ nombre }}</a>{% endfor %}
+</div></div>
+{% endif %}
+<header class="barra"><div class="dentro">
+  <a class="marca-negocio" href="{% url 'mostrador' %}">
+    <span class="sello-negocio" aria-hidden="true">{{ negocio|slice:":1" }}</span>
+    <span><b>{{ negocio }}</b><small>Afinación · lubricantes · químicos</small></span>
+  </a>
   {% if user.is_authenticated %}
-  <div class="franja"><div class="dentro">
-    <nav aria-label="Secciones">
-      {% url 'mostrador' as u_mostrador %}{% url 'caja' as u_caja %}
-      <a href="{{ u_mostrador }}"{% if request.path == u_mostrador %} aria-current="page"{% endif %}>Mostrador</a>
-      <a href="{{ u_caja }}"{% if request.path == u_caja %} aria-current="page"{% endif %}>Caja</a>
-      {% if user.is_staff %}<a href="{% url 'admin:index' %}">Administración</a>{% endif %}
-    </nav>
-    <span class="quien">
-      <span class="caja-estado{% if turno %} abierta{% endif %}">{% if turno %}Caja abierta{% else %}Caja cerrada{% endif %}</span>
-      <span>· {{ user.get_short_name|default:user.get_username }}</span>
-      <form method="post" action="{% url 'salir' %}">{% csrf_token %}<button type="submit">Salir</button></form>
-    </span>
-  </div></div>
+  <nav class="secciones" aria-label="Secciones">
+    {% url 'mostrador' as u_mostrador %}{% url 'caja' as u_caja %}
+    <a href="{{ u_mostrador }}"{% if request.path == u_mostrador %} aria-current="page"{% endif %}>Mostrador</a>
+    <a href="{{ u_caja }}"{% if request.path == u_caja %} aria-current="page"{% endif %}>Caja</a>
+    {% if user.is_staff %}<a href="{% url 'admin:index' %}">Administración</a>{% endif %}
+  </nav>
+  <div class="usuario">
+    <span class="caja-estado{% if turno %} abierta{% endif %}">{% if turno %}Caja abierta{% else %}Caja cerrada{% endif %}</span>
+    <span class="quien">{{ user.get_short_name|default:user.get_username }}</span>
+    <form method="post" action="{% url 'salir' %}">{% csrf_token %}<button type="submit">Salir</button></form>
+  </div>
   {% endif %}
-  <div class="cabecera"><div class="dentro">
-    <a class="logo" href="{% url 'mostrador' %}"><b>{{ negocio }}</b><span>Refacciones · afinación, lubricantes y químicos</span></a>
-    {% if user.is_authenticated %}
-    <form class="buscar" method="get" action="{% url 'mostrador' %}" role="search">
-      <input name="q" placeholder="Busca el vehículo: tsuru 2003, jetta 04 2.0, vocho 95" aria-label="Buscar vehículo" autocomplete="off"{% block autofoco %}{% endblock %}>
-      <button type="submit">Buscar</button>
-    </form>
-    {% endif %}
-  </div></div>
-</header>
+</div></header>
 <main class="pagina"><div class="dentro">
   {% if messages %}<div class="avisos" role="status">{% for msg in messages %}<div class="aviso {{ msg.tags }}">{{ msg }}</div>{% endfor %}</div>{% endif %}
   {% block contenido %}{% endblock %}
 </div></main>
 <footer class="pie-sitio"><div class="dentro">{{ negocio }} · Precios con IVA incluido. Aplicaciones y costos según las listas de proveedor cargadas.</div></footer>
+{% block abajo %}{% endblock %}
+{% block scripts %}{% endblock %}
 </body>
 </html>

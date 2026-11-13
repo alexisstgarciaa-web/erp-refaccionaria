@@ -5,12 +5,13 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.db.models import Count
+from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
-from compras.aplicaciones import buscar, leer_consulta, opciones
+from compras.aplicaciones import buscar, clave_modelo, leer_consulta, selector
 
 from . import mostrador as m
 from .models import Cliente, FormaPago, Turno
@@ -46,15 +47,48 @@ def _decimal(txt, defecto=None):
 
 
 def _vehiculo_de_busqueda(texto):
-    """'tsuru 2003' → parámetros del selector con el vehículo más común que coincide."""
+    """'tsuru 2003' → parámetros de las listas con el vehículo más común que coincide."""
     palabras, anio, litros = leer_consulta(texto)
     if not anio:
         return None, "Escribe también el año, por ejemplo «tsuru 2003»."
     mejor = (buscar(texto).values("armadora", "modelo_base").annotate(n=Count("partida", distinct=True))
              .order_by("-n").first())
     if not mejor:
-        return None, f"No encontré «{texto}» en las listas. Prueba con el selector."
-    return {"anio": anio, "armadora": mejor["armadora"], "modelo": mejor["modelo_base"], "litros": litros}, None
+        return None, f"No encontré «{texto}» en las listas. Prueba con las listas de marca, año y modelo."
+    return {"armadora": mejor["armadora"], "anio": anio, "modelo": mejor["modelo_base"], "litros": litros}, None
+
+
+def _elegido(g):
+    """Lee marca › año › modelo › motor de la URL y suelta lo que ya no cuadra con lo anterior
+    (por ejemplo, si cambiaron la marca y el año elegido no existe para la nueva)."""
+    armadora = g.get("armadora", "")
+    anio = int(g["anio"]) if g.get("anio", "").isdigit() else None
+    modelo, litros = g.get("modelo", ""), g.get("litros", "")
+    listas = selector(armadora, anio, modelo)
+    if armadora not in {v for v, _ in listas["marcas"]}:
+        armadora, anio, modelo, litros = "", None, "", ""
+    if anio not in listas["anios"]:
+        anio, modelo, litros = None, "", ""
+    nombres = {clave_modelo(v): v for v, _ in listas["modelos"]}
+    if modelo:
+        modelo = nombres.get(clave_modelo(modelo), "")
+        if not modelo:
+            litros = ""
+    sel = {"armadora": armadora, "anio": anio, "modelo": modelo, "litros": litros}
+    if (armadora, anio, modelo) != (g.get("armadora", ""), int(g["anio"]) if g.get("anio", "").isdigit() else None,
+                                    g.get("modelo", "")):
+        listas = selector(armadora, anio, modelo)
+    motores = [v for v, _ in listas["motores"]]
+    if modelo and litros != "todos" and litros not in motores:
+        # un solo motor (o ninguno escrito en la lista): no hay nada que preguntar
+        sel["litros"] = motores[0] if len(motores) == 1 else ("todos" if not motores else "")
+    return sel, listas
+
+
+def _recordar(request, sel):
+    """Últimos vehículos atendidos, para volver a ellos con un toque."""
+    recientes = [r for r in request.session.get("recientes", []) if r != sel]
+    request.session["recientes"] = [sel] + recientes[:5]
 
 
 @login_required
@@ -68,40 +102,38 @@ def mostrador(request):
         return redirect(_url(**params))
 
     ticket = m.Ticket(request.session)
-    anio = int(g["anio"]) if g.get("anio", "").isdigit() else None
-    armadora, modelo, litros = g.get("armadora", ""), g.get("modelo", ""), g.get("litros", "")
-    # litros=todos: el cliente no sabe el motor; se muestran las piezas de todos los motores
-    ctx = {"ticket": ticket, "turno": _turno(request.user), "anio": anio, "armadora": armadora, "modelo": modelo,
-           "litros": litros, "clientes": Cliente.objects.filter(activo=True), "cliente": ticket.cliente}
-
-    # Selector: año › armadora › modelo › litros
-    if not anio:
-        hoy = timezone.localdate().year
-        ctx.update(paso="anio", anios=range(hoy + 1, 1979, -1))
-    elif not armadora:
-        ctx.update(paso="armadora", opciones=[(v, n, _url(anio=anio, armadora=v)) for v, n in opciones(anio)])
-    elif not modelo:
-        ops = sorted(opciones(anio, armadora), key=lambda x: x[0].lower())
-        ctx.update(paso="modelo", opciones=[(v, n, _url(anio=anio, armadora=armadora, modelo=v)) for v, n in ops])
+    sel, listas = _elegido(g)
+    ctx = {"ticket": ticket, "turno": _turno(request.user), "sel": sel, "listas": listas,
+           "clientes": Cliente.objects.filter(activo=True), "cliente": ticket.cliente,
+           "marcas_comunes": listas["marcas"][:8],
+           "marcas": sorted(listas["marcas"], key=lambda x: x[0].lower())}
+    if sel["modelo"] and sel["litros"]:
+        veh = m.Vehiculo(sel["anio"], sel["armadora"], sel["modelo"], "" if sel["litros"] == "todos" else sel["litros"])
+        ctx.update(_ficha(request, ticket, veh, sel["litros"]))
+        _recordar(request, sel)
     else:
-        ops = opciones(anio, armadora, modelo)
-        if not litros and len(ops) > 1:
-            ctx.update(paso="litros", opciones=[(f"{v} L", n, _url(anio=anio, armadora=armadora, modelo=modelo, litros=v))
-                                                for v, n in ops],
-                       todos=_url(anio=anio, armadora=armadora, modelo=modelo, litros="todos"))
-        else:
-            if not litros:
-                litros = ops[0][0] if ops else "todos"
-            veh = m.Vehiculo(anio, armadora, modelo, "" if litros == "todos" else litros)
-            ctx.update(_ficha(request, ticket, veh, litros))
+        ctx["paso"] = ("motor" if sel["modelo"] else "modelo" if sel["anio"] else "anio" if sel["armadora"]
+                       else "marca")
+    ctx["recientes"] = [dict(r, url=_url(**r)) for r in request.session.get("recientes", []) if r != sel][:5]
     ctx["lineas"] = lineas = ticket.lineas(ctx.get("veh"))
     vender = [ln for ln in lineas if not ln.sobre_pedido]
     ctx["total"] = total = sum((ln.importe for ln in vender), Decimal(0))
     ctx["iva"] = total - total / m.IVA
+    ctx["piezas"] = sum((ln.cantidad for ln in vender), Decimal(0))
     ctx["pedido_total"] = sum((ln.importe for ln in lineas if ln.sobre_pedido), Decimal(0))
+    ctx["pedido_n"] = sum(1 for ln in lineas if ln.sobre_pedido)
     ctx["pagos"] = [fp for fp in FormaPago if fp != FormaPago.CREDITO or ticket.cliente.dias_credito > 0]
     ctx["aqui"] = request.get_full_path()
     return render(request, "ventas/mostrador.html", ctx)
+
+
+@login_required
+def vehiculo_listas(request):
+    """Las listas siguientes al cambiar una, para llenarlas sin recargar la página."""
+    sel, listas = _elegido(request.GET)
+    return JsonResponse({"sel": sel, "anios": listas["anios"],
+                         "modelos": [v for v, _ in listas["modelos"]],
+                         "motores": [v for v, _ in listas["motores"]]})
 
 
 def _ficha(request, ticket, veh, litros_param, pos_clave=None):
@@ -124,9 +156,22 @@ def _ficha(request, ticket, veh, litros_param, pos_clave=None):
                 totales[k]["pedido"] += op.sobre_pedido
         otras_en_ticket = next((o for o in otras if o.clave == en_ticket), None)
         filas.append({"p": p, "celdas": celdas, "otras": otras[:8], "mas": max(len(otras) - 8, 0),
+                      "hay": any(c["op"] for c in celdas) or bool(otras),
                       "elegida": bool(en_ticket), "otra_elegida": otras_en_ticket})
     return {"paso": "ficha", "veh": veh, "filas": filas, "totales": list(totales.values()), "base": base,
             "elegidas": len(elegidas), "sobreprecio": int(m.sobreprecio() * 100)}
+
+
+def estilo(request, clave):
+    """Cambia el estilo visual a prueba y regresa a la misma página."""
+    from .contexto import ESTILOS
+
+    if clave in ESTILOS:
+        request.session["estilo"] = clave
+    destino = request.GET.get("next") or ""
+    if url_has_allowed_host_and_scheme(destino, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+        return redirect(destino)
+    return redirect("mostrador")
 
 
 @login_required

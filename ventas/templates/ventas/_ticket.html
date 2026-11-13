@@ -1,45 +1,24 @@
 {% load erp %}
-<aside class="ticket" aria-label="Ticket">
-  <div class="papel">
-    <div class="encabezado">
-      <b>{{ negocio }}</b>
-      <span class="tenue">{% now "j/m/Y H:i" %} · {% if turno %}caja abierta{% else %}caja cerrada{% endif %}</span>
-    </div>
-    <form method="post" action="{% url 'ticket_cliente' %}">{% csrf_token %}
-      <input type="hidden" name="next" value="{{ aqui }}">
-      <label class="tenue" for="cliente">Cliente · lista {{ cliente.lista_precio }}</label>
-      <select id="cliente" name="cliente" onchange="this.form.submit()">
-        {% for c in clientes %}<option value="{{ c.pk }}"{% if c.pk == cliente.pk %} selected{% endif %}>{{ c }}{% if c.dias_credito %} · crédito {{ c.dias_credito }} días{% endif %}</option>{% endfor %}
-      </select>
-      <noscript><button class="btn" type="submit">Cambiar</button></noscript>
-    </form>
-
-    {% if not lineas %}<p class="tenue" style="margin: 14px 0 0">Ticket vacío. Toca una casilla de la hoja de afinación o "Llevar" una afinación completa.</p>{% endif %}
-    {% for ln in lineas %}{% if not ln.sobre_pedido %}{% include "ventas/_renglon.html" %}{% endif %}{% endfor %}
-
-    {% if pedido_total %}
-      <div class="subtitulo-ticket">Sobre pedido · se cobra al entregar</div>
-      {% for ln in lineas %}{% if ln.sobre_pedido %}{% include "ventas/_renglon.html" %}{% endif %}{% endfor %}
-      <div class="tenue" style="margin-top: 6px">Cotizado {{ pedido_total|pesos }}. Al cobrar queda la orden al proveedor en borrador.</div>
-    {% endif %}
-
-    <div class="total"><span>TOTAL HOY</span><b>{{ total|pesos }}</b></div>
-    <div class="tenue">IVA incluido {{ iva|pesos }}</div>
-  </div>
-
-  <form method="post" action="{% url 'ticket_cobrar' %}" style="display: flex; flex-direction: column; gap: 12px">{% csrf_token %}
+<aside class="panel ticket" aria-label="Ticket">
+  <header class="ticket-cabeza">
+    <h2>Ticket</h2>
+    <span>{% now "j/m/Y H:i" %}</span>
+  </header>
+  <form method="post" action="{% url 'ticket_cliente' %}" class="ticket-cliente">{% csrf_token %}
     <input type="hidden" name="next" value="{{ aqui }}">
-    {% for k, v in base.items %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
-    <fieldset class="pagos">
-      <legend class="sr">Forma de pago</legend>
-      {% for fp in pagos %}
-        <label><input type="radio" name="forma_pago" value="{{ fp.value }}"{% if forloop.first %} checked{% endif %}><span>{{ fp.label }}</span></label>
-      {% endfor %}
-    </fieldset>
-    {% if turno %}
-      <button class="cobrar" type="submit"{% if not lineas %} disabled{% endif %}>{% if total %}Cobrar {{ total|pesos }}{% elif lineas %}Registrar pedido{% else %}Cobrar{% endif %}</button>
-    {% else %}
-      <a class="cobrar" href="{% url 'caja' %}">Abrir caja para cobrar</a>
-    {% endif %}
+    <label for="cliente">Cliente <small>lista {{ cliente.lista_precio }}</small></label>
+    <select id="cliente" name="cliente" onchange="this.form.submit()">
+      {% for c in clientes %}<option value="{{ c.pk }}"{% if c.pk == cliente.pk %} selected{% endif %}>{{ c }}{% if c.dias_credito %} · crédito {{ c.dias_credito }} días{% endif %}</option>{% endfor %}
+    </select>
+    <noscript><button class="btn-sec" type="submit">Cambiar</button></noscript>
   </form>
+
+  {% if not lineas %}<p class="ticket-vacio">Todavía no hay piezas. Toca una opción o «Llevar completa» en una afinación.</p>{% endif %}
+  {% for ln in lineas %}{% if not ln.sobre_pedido %}{% include "ventas/_renglon.html" %}{% endif %}{% endfor %}
+
+  {% if pedido_total %}
+    <h3 class="ticket-pedido">Sobre pedido · se cobra al entregar</h3>
+    {% for ln in lineas %}{% if ln.sobre_pedido %}{% include "ventas/_renglon.html" %}{% endif %}{% endfor %}
+    <p class="ticket-nota">Al cobrar queda la orden al proveedor en borrador.</p>
+  {% endif %}
 </aside>

@@ -48,13 +48,42 @@ class MostradorTests(TestCase):
 
     def test_selector_y_busqueda(self):
         r = self.client.get(reverse("mostrador"), {"q": "tsuru 2003"})
-        self.assertRedirects(r, reverse("mostrador") + "?anio=2003&armadora=Nissan&modelo=Tsuru", fetch_redirect_response=False)
-        r = self.client.get(reverse("mostrador"), {"anio": 2003, "armadora": "Nissan", "modelo": "Tsuru"})
-        self.assertContains(r, "Nissan Tsuru 2003")
+        self.assertRedirects(r, reverse("mostrador") + "?armadora=Nissan&anio=2003&modelo=Tsuru", fetch_redirect_response=False)
+        r = self.client.get(reverse("mostrador"), {"armadora": "Nissan", "anio": 2003, "modelo": "Tsuru"})
+        self.assertContains(r, "Nissan Tsuru <span>2003</span>")
         self.assertContains(r, "PH966B")
-        self.assertContains(r, "Hoja de afinación")
-        self.assertContains(r, 'class="sello pedido"')
-        self.assertContains(r, "Llevar estándar")
+        self.assertContains(r, "Afinación estándar")
+        self.assertContains(r, 'class="estado pedido"')
+        self.assertContains(r, "Total a cobrar")
+        # el vehículo queda en recientes
+        self.assertEqual(self.client.session["recientes"][0]["modelo"], "Tsuru")
+
+    def test_listas_marca_anio_modelo_motor(self):
+        r = self.client.get(reverse("mostrador"))
+        self.assertContains(r, '<option value="Nissan">Nissan</option>')
+        self.assertContains(r, '<select name="anio" disabled>')  # sin marca no hay años
+        # cada lista sale filtrada por la anterior
+        d = self.client.get(reverse("vehiculo_listas"), {"armadora": "Nissan"}).json()
+        self.assertIn(2003, d["anios"])
+        self.assertEqual(d["modelos"], [])
+        d = self.client.get(reverse("vehiculo_listas"), {"armadora": "Nissan", "anio": 2003}).json()
+        self.assertEqual(d["modelos"], ["Tsuru"])
+        d = self.client.get(reverse("vehiculo_listas"), {"armadora": "Nissan", "anio": 2003, "modelo": "Tsuru"}).json()
+        self.assertEqual(d["motores"], ["1.6"])
+        self.assertEqual(d["sel"]["litros"], "1.6")  # un solo motor: se elige solo
+        # si cambian la marca, el año y el modelo que ya no cuadran se sueltan
+        r = self.client.get(reverse("mostrador"), {"armadora": "Nissan", "anio": 1960, "modelo": "Tsuru"})
+        self.assertEqual(r.context["sel"], {"armadora": "Nissan", "anio": None, "modelo": "", "litros": ""})
+        self.assertEqual(r.context["paso"], "anio")
+        r = self.client.get(reverse("mostrador"), {"armadora": "Marca que no existe", "anio": 2003})
+        self.assertEqual(r.context["paso"], "marca")
+
+    def test_cambiar_estilo(self):
+        r = self.client.get(reverse("estilo", args=["pista"]), {"next": reverse("caja")})
+        self.assertRedirects(r, reverse("caja"), fetch_redirect_response=False)
+        self.assertContains(self.client.get(reverse("caja")), 'data-estilo="pista"')
+        self.client.get(reverse("estilo", args=["nada"]))
+        self.assertContains(self.client.get(reverse("caja")), 'data-estilo="pista"')
 
     def test_cobrar_vende_lo_que_hay_y_pide_lo_que_no(self):
         abrir = self.client.post(reverse("caja"), {"accion": "abrir", "fondo": "500"})
