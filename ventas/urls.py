@@ -12,5 +12,4 @@ urlpatterns = [
     path("ticket/cliente/", views.cliente, name="ticket_cliente"),
     path("ticket/cobrar/", views.cobrar, name="ticket_cobrar"),
     path("caja/", views.caja, name="caja"),
-    path("estilo/<slug:clave>/", views.estilo, name="estilo"),
 ]

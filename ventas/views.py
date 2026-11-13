@@ -162,18 +162,6 @@ def _ficha(request, ticket, veh, litros_param, pos_clave=None):
             "elegidas": len(elegidas), "sobreprecio": int(m.sobreprecio() * 100)}
 
 
-def estilo(request, clave):
-    """Cambia el estilo visual a prueba y regresa a la misma página."""
-    from .contexto import ESTILOS
-
-    if clave in ESTILOS:
-        request.session["estilo"] = clave
-    destino = request.GET.get("next") or ""
-    if url_has_allowed_host_and_scheme(destino, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
-        return redirect(destino)
-    return redirect("mostrador")
-
-
 @login_required
 @require_POST
 def agregar(request):

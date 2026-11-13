@@ -1,21 +1,15 @@
 {% load static %}<!doctype html>
-<html lang="es" data-estilo="{{ estilo.clave }}">
+<html lang="es">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block titulo %}Mostrador{% endblock %} · {{ negocio }}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?{{ estilo.fuentes }}&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,400..900;1,62..125,400..900&family=Geist+Mono:wght@400..600&display=swap">
 <link rel="stylesheet" href="{% static 'ventas/erp.css' %}">
 </head>
 <body class="{% block cuerpo %}{% endblock %}">
-{% if user.is_authenticated %}
-<div class="prueba-estilos"><div class="dentro">
-  <span>Estilo a prueba, elige el que más te guste:</span>
-  {% for clave, nombre in estilos %}<a href="{% url 'estilo' clave %}?next={{ request.get_full_path|urlencode }}"{% if clave == estilo.clave %} aria-current="true"{% endif %}>{{ nombre }}</a>{% endfor %}
-</div></div>
-{% endif %}
 <header class="barra"><div class="dentro">
   <a class="marca-negocio" href="{% url 'mostrador' %}">
     <span class="sello-negocio" aria-hidden="true">{{ negocio|slice:":1" }}</span>

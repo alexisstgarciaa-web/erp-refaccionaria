@@ -78,13 +78,6 @@ class MostradorTests(TestCase):
         r = self.client.get(reverse("mostrador"), {"armadora": "Marca que no existe", "anio": 2003})
         self.assertEqual(r.context["paso"], "marca")
 
-    def test_cambiar_estilo(self):
-        r = self.client.get(reverse("estilo", args=["pista"]), {"next": reverse("caja")})
-        self.assertRedirects(r, reverse("caja"), fetch_redirect_response=False)
-        self.assertContains(self.client.get(reverse("caja")), 'data-estilo="pista"')
-        self.client.get(reverse("estilo", args=["nada"]))
-        self.assertContains(self.client.get(reverse("caja")), 'data-estilo="pista"')
-
     def test_cobrar_vende_lo_que_hay_y_pide_lo_que_no(self):
         abrir = self.client.post(reverse("caja"), {"accion": "abrir", "fondo": "500"})
         self.assertRedirects(abrir, reverse("mostrador"), fetch_redirect_response=False)

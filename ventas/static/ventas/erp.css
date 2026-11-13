@@ -1,110 +1,9 @@
-/* ERP refaccionaria · mostrador y caja.
-   Tres estilos a prueba (cristal, expresivo, pista). La estructura es la misma; cada estilo
-   cambia los tokens de abajo y unos cuantos detalles al final del archivo. */
+/* ERP refaccionaria · mostrador y caja. Estilo «Pista», elegido por el dueño el 2026-11-13:
+   automotriz de carreras, carbón, blanco y rojo, Archivo expandido en itálica y cortes en diagonal.
+   Toda pantalla nueva usa estos tokens. */
 
-/* ───────── Cristal: oscuro con paneles de vidrio esmerilado (por defecto) ───────── */
-:root, [data-estilo="cristal"] {
-  color-scheme: dark;
-  --fondo: #070B18;
-  --fondo-img:
-    radial-gradient(1100px 700px at 6% -10%, rgba(46, 84, 214, .55), transparent 62%),
-    radial-gradient(900px 620px at 102% 4%, rgba(16, 140, 140, .45), transparent 58%),
-    radial-gradient(900px 640px at 55% 118%, rgba(104, 52, 190, .42), transparent 62%),
-    #070B18;
-  --superficie: rgba(255, 255, 255, .055);
-  --superficie-2: rgba(255, 255, 255, .09);
-  --lectura: rgba(10, 15, 32, .62);
-  --campo: rgba(6, 10, 24, .55);
-  --borde: rgba(255, 255, 255, .13);
-  --borde-2: rgba(255, 255, 255, .08);
-  --texto: #F1F4FF;
-  --texto-2: #BAC3DD;
-  --texto-3: #8590AE;
-  --primario: #7CF3D0;
-  --sobre-primario: #03231B;
-  --primario-suave: rgba(124, 243, 208, .16);
-  --hay: #7CF3D0;
-  --pedido: #FFC46B;
-  --rojo: #FF8F8F;
-  --enlace: #A9C7FF;
-  --radio: 22px;
-  --radio-sm: 14px;
-  --radio-btn: 12px;
-  --blur: blur(24px) saturate(160%);
-  --sombra: 0 18px 50px rgba(0, 0, 0, .35);
-  --f-texto: "Geist", system-ui, sans-serif;
-  --f-titulo: "Geist", system-ui, sans-serif;
-  --f-mono: "Geist Mono", ui-monospace, monospace;
-  --t-peso: 650;
-  --t-espacio: -0.035em;
-  --t-estilo: normal;
-  --t-ancho: 100%;
-  --barra-fondo: rgba(7, 11, 24, .55);
-  --barra-texto: #F1F4FF;
-  --barra-texto-2: #9AA5C4;
-  --barra-activo: rgba(255, 255, 255, .1);
-  --cobro-fondo: rgba(9, 14, 30, .72);
-  --cobro-texto: #F1F4FF;
-  --cobro-texto-2: #9AA5C4;
-  --cobro-pagos: rgba(255, 255, 255, .06);
-  --cobro-pago-activo: rgba(255, 255, 255, .16);
-  --cobrar-fondo: linear-gradient(135deg, #8BFFE0, #5BD6F5);
-  --cobrar-texto: #03231B;
-  --std-fondo: linear-gradient(150deg, rgba(124, 243, 208, .22), rgba(91, 214, 245, .12));
-  --std-borde: rgba(124, 243, 208, .55);
-}
-
-/* ───────── Expresivo: claro, formas grandes y redondas, color con carácter ───────── */
-[data-estilo="expresivo"] {
-  color-scheme: light;
-  --fondo: #F2EFFC;
-  --fondo-img:
-    radial-gradient(700px 500px at 0% 0%, #E4DBFF, transparent 70%),
-    radial-gradient(600px 480px at 100% 30%, #FFE3D6, transparent 70%),
-    #F2EFFC;
-  --superficie: #FFFFFF;
-  --superficie-2: #EFEAFF;
-  --lectura: #FBFAFF;
-  --campo: #FFFFFF;
-  --borde: #DDD5F7;
-  --borde-2: #ECE7FC;
-  --texto: #1A1240;
-  --texto-2: #4B4373;
-  --texto-3: #7E78A3;
-  --primario: #5527E8;
-  --sobre-primario: #FFFFFF;
-  --primario-suave: #E5DCFF;
-  --hay: #0C8A5C;
-  --pedido: #D9480F;
-  --rojo: #C81E3A;
-  --enlace: #5527E8;
-  --radio: 32px;
-  --radio-sm: 22px;
-  --radio-btn: 999px;
-  --blur: none;
-  --sombra: 0 1px 0 rgba(26, 18, 64, .04), 0 10px 30px rgba(85, 39, 232, .06);
-  --f-texto: "Onest", system-ui, sans-serif;
-  --f-titulo: "Bricolage Grotesque", system-ui, sans-serif;
-  --f-mono: "Geist Mono", ui-monospace, monospace;
-  --t-peso: 800;
-  --t-espacio: -0.04em;
-  --barra-fondo: rgba(242, 239, 252, .85);
-  --barra-texto: #1A1240;
-  --barra-texto-2: #625B8C;
-  --barra-activo: #FFFFFF;
-  --cobro-fondo: #1A1240;
-  --cobro-texto: #FFFFFF;
-  --cobro-texto-2: #BDB5E6;
-  --cobro-pagos: rgba(255, 255, 255, .08);
-  --cobro-pago-activo: #FFFFFF;
-  --cobrar-fondo: #FF6A3D;
-  --cobrar-texto: #1A0A00;
-  --std-fondo: #5527E8;
-  --std-borde: #5527E8;
-}
-
-/* ───────── Pista: automotriz de carreras, carbón, blanco y rojo, cortes en diagonal ───────── */
-[data-estilo="pista"] {
+/* ───────── Tokens ───────── */
+:root {
   color-scheme: light;
   --fondo: #ECECE8;
   --fondo-img: #ECECE8;
@@ -168,13 +67,6 @@ h1, h2, h3 { margin: 0; font-family: var(--f-titulo); font-weight: var(--t-peso)
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .panel { background: var(--superficie); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
   border: 1px solid var(--borde); border-radius: var(--radio); box-shadow: var(--sombra); }
-
-/* Franja temporal para elegir estilo */
-.prueba-estilos { background: var(--texto); color: var(--fondo); font-size: 13px; }
-.prueba-estilos .dentro { display: flex; align-items: center; gap: 6px; min-height: 38px; flex-wrap: wrap; }
-.prueba-estilos span { margin-right: 8px; opacity: .8; }
-.prueba-estilos a { color: inherit; text-decoration: none; padding: 3px 12px; border-radius: 999px; border: 1px solid transparent; font-weight: 600; }
-.prueba-estilos a[aria-current] { border-color: currentColor; }
 
 /* Barra superior */
 .barra { position: sticky; top: 0; z-index: 20; background: var(--barra-fondo); color: var(--barra-texto);
@@ -403,61 +295,41 @@ option, optgroup { background: var(--fondo); color: var(--texto); }
 .pie-sitio { padding: 18px 0; font-size: 12px; color: var(--texto-3); border-top: 1px solid var(--borde-2); }
 body.con-cobro .pie-sitio { display: none; }
 
-/* ───────── Detalles propios de cada estilo ───────── */
-[data-estilo="cristal"] .opcion { -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
-[data-estilo="cristal"] .cobrar:not(:disabled) { box-shadow: 0 10px 30px rgba(124, 243, 208, .25); }
-[data-estilo="cristal"] select option, [data-estilo="cristal"] select optgroup { background: #0E1428; }
+/* ───────── Detalles de pista: cortes en diagonal, itálicas, bandera a cuadros ───────── */
 
-[data-estilo="expresivo"] .paquete-std { color: #FFFFFF; }
-[data-estilo="expresivo"] .paquete-std .paquete-nivel,
-[data-estilo="expresivo"] .paquete-std .paquete-detalle { color: #D9CFFF; }
-[data-estilo="expresivo"] .paquete-std .paquete-accion { color: #FFB59C; }
-[data-estilo="expresivo"] .paquete-eco { background: #DDF6EA; border-color: #BDEBD5; }
-[data-estilo="expresivo"] .paquete-pre { background: #FFE6DA; border-color: #FFCDB6; }
-[data-estilo="expresivo"] .pieza-num { border-radius: 42% 58% 55% 45% / 50% 45% 55% 50%; width: 34px; height: 34px; background: #FFE6DA; color: #B33A0B; }
-[data-estilo="expresivo"] .pieza.elegida .pieza-num { background: var(--primario); color: #fff; }
-[data-estilo="expresivo"] .barra-cobro { left: 16px; right: 16px; bottom: 14px; border: 0; border-radius: 36px;
-  box-shadow: 0 24px 60px rgba(40, 18, 140, .35); }
-[data-estilo="expresivo"] .barra-cobro .dentro { padding: 0 28px; }
-[data-estilo="expresivo"] body.con-cobro { padding-bottom: 140px; }
-[data-estilo="expresivo"] .pagos input:checked + span { color: #1A1240; }
-[data-estilo="expresivo"] .vehiculo-titulo h1 span { color: var(--primario); }
-[data-estilo="expresivo"] .sello-negocio { border-radius: 14px 14px 14px 4px; }
-
-[data-estilo="pista"] .barra { border-bottom: 4px solid var(--primario); }
-[data-estilo="pista"] .secciones a { font-style: italic; font-weight: 700; text-transform: uppercase; font-size: 14px; letter-spacing: .02em;
+.barra { border-bottom: 4px solid var(--primario); }
+.secciones a { font-style: italic; font-weight: 700; text-transform: uppercase; font-size: 14px; letter-spacing: .02em;
   clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%); padding-inline: 18px; }
-[data-estilo="pista"] .sello-negocio, [data-estilo="pista"] .btn-primario, [data-estilo="pista"] .btn,
-[data-estilo="pista"] .cobrar, [data-estilo="pista"] .pagos span, [data-estilo="pista"] .chip {
+.sello-negocio, .btn-primario, .btn,
+.cobrar, .pagos span, .chip {
   clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%); }
-[data-estilo="pista"] .btn-primario, [data-estilo="pista"] .cobrar { font-style: italic; text-transform: uppercase; letter-spacing: .02em; padding-inline: 32px; }
-[data-estilo="pista"] .paquete { border-top: 4px solid var(--texto); }
-[data-estilo="pista"] .paquete-std { color: #FFFFFF; border-top-color: var(--primario); }
-[data-estilo="pista"] .paquete-std .paquete-nivel, [data-estilo="pista"] .paquete-std .paquete-detalle { color: #B8B8B2; }
-[data-estilo="pista"] .paquete-std .paquete-accion { color: #FF4D47; }
-[data-estilo="pista"] .paquete-accion { text-transform: uppercase; font-style: italic; letter-spacing: .03em; }
-[data-estilo="pista"] .pieza-num { border-radius: 0; background: var(--texto); color: #fff; font-style: italic;
+.btn-primario, .cobrar { font-style: italic; text-transform: uppercase; letter-spacing: .02em; padding-inline: 32px; }
+.paquete { border-top: 4px solid var(--texto); }
+.paquete-std { color: #FFFFFF; border-top-color: var(--primario); }
+.paquete-std .paquete-nivel, .paquete-std .paquete-detalle { color: #B8B8B2; }
+.paquete-std .paquete-accion { color: #FF4D47; }
+.paquete-accion { text-transform: uppercase; font-style: italic; letter-spacing: .03em; }
+.pieza-num { border-radius: 0; background: var(--texto); color: #fff; font-style: italic;
   clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%); width: 36px; }
-[data-estilo="pista"] .pieza.elegida .pieza-num { background: var(--primario); }
-[data-estilo="pista"] .pieza-cabeza h3 { text-transform: uppercase; font-size: 18px; }
-[data-estilo="pista"] .opcion { border-left: 4px solid var(--borde); }
-[data-estilo="pista"] .opcion-std { border-left-color: var(--texto); }
-[data-estilo="pista"] .opcion.marcada { border: 2px solid var(--primario); border-left-width: 6px; box-shadow: none; background: #FFF6F5; }
-[data-estilo="pista"] .opcion.marcada::after { border-radius: 0; clip-path: polygon(5px 0, 100% 0, calc(100% - 5px) 100%, 0 100%); width: 30px; }
-[data-estilo="pista"] .estado { border-radius: 0; text-transform: uppercase; font-size: 11px; letter-spacing: .05em; font-style: italic; }
-[data-estilo="pista"] .estado.pedido { background: var(--primario); color: #fff; }
-[data-estilo="pista"] .estado.hay { background: #0A7A3D; color: #fff; }
-[data-estilo="pista"] .en-ticket { border-radius: 0; background: var(--primario); color: #fff; font-style: italic; text-transform: uppercase; }
-[data-estilo="pista"] .barra-cobro { border-top: 0; }
-[data-estilo="pista"] .barra-cobro::before { content: ""; position: absolute; left: 0; right: 0; top: -10px; height: 10px;
+.pieza.elegida .pieza-num { background: var(--primario); }
+.pieza-cabeza h3 { text-transform: uppercase; font-size: 18px; }
+.opcion { border-left: 4px solid var(--borde); }
+.opcion-std { border-left-color: var(--texto); }
+.opcion.marcada { border: 2px solid var(--primario); border-left-width: 6px; box-shadow: none; background: #FFF6F5; }
+.opcion.marcada::after { border-radius: 0; clip-path: polygon(5px 0, 100% 0, calc(100% - 5px) 100%, 0 100%); width: 30px; }
+.estado { border-radius: 0; text-transform: uppercase; font-size: 11px; letter-spacing: .05em; font-style: italic; }
+.estado.pedido { background: var(--primario); color: #fff; }
+.estado.hay { background: #0A7A3D; color: #fff; }
+.en-ticket { border-radius: 0; background: var(--primario); color: #fff; font-style: italic; text-transform: uppercase; }
+.barra-cobro { border-top: 0; }
+.barra-cobro::before { content: ""; position: absolute; left: 0; right: 0; top: -10px; height: 10px;
   background: repeating-conic-gradient(#111214 0 25%, #FFFFFF 0 50%) 0 0 / 10px 10px; }
-[data-estilo="pista"] .pagos { border-radius: 0; }
-[data-estilo="pista"] .pagos input:checked + span { color: #111214; }
-[data-estilo="pista"] .pasos li, [data-estilo="pista"] .pasos li::before { border-radius: 0; }
-[data-estilo="pista"] .pasos li.actual { background: var(--texto); color: #fff; border-color: var(--texto); }
-[data-estilo="pista"] .prueba-estilos { background: var(--primario); color: #fff; }
-[data-estilo="pista"] .vehiculo-titulo h1, [data-estilo="pista"] .guia h1 { text-transform: uppercase; }
-[data-estilo="pista"] .vehiculo-titulo h1 span { color: var(--primario); }
+.pagos { border-radius: 0; }
+.pagos input:checked + span { color: #111214; }
+.pasos li, .pasos li::before { border-radius: 0; }
+.pasos li.actual { background: var(--texto); color: #fff; border-color: var(--texto); }
+.vehiculo-titulo h1, .guia h1 { text-transform: uppercase; }
+.vehiculo-titulo h1 span { color: var(--primario); }
 
 /* ───────── Tablet y celular ───────── */
 @media (max-width: 1100px) {
@@ -499,7 +371,4 @@ body.con-cobro .pie-sitio { display: none; }
   .pagos label { flex: 1; }
   .pagos span { padding: 0 6px; height: 38px; line-height: 38px; text-align: center; font-size: 13px; }
   .cobrar { height: 52px; min-width: 0; font-size: 16px; padding: 0 16px; }
-  [data-estilo="expresivo"] .barra-cobro { left: 8px; right: 8px; bottom: 8px; border-radius: 26px; }
-  [data-estilo="expresivo"] .barra-cobro .dentro { padding: 12px 16px; }
-  [data-estilo="expresivo"] body.con-cobro { padding-bottom: 170px; }
 }
