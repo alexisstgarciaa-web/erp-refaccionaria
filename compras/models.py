@@ -89,3 +89,37 @@ class RecepcionLinea(models.Model):
     cantidad = models.DecimalField(max_digits=12, decimal_places=3, help_text="En la unidad de la línea de la OC")
     lote = models.CharField(max_length=60, blank=True)
     caducidad = models.DateField(null=True, blank=True)
+
+
+class PartidaListaProveedor(models.Model):
+    """Una fila de la lista de precios de un proveedor (ej. MORSA). Es el catálogo del proveedor,
+    no mi inventario: se puede buscar en mostrador y se activa como Producto solo si lo voy a surtir."""
+
+    class Tipo(models.TextChoices):
+        ACEITE = "ACEITE", "Filtro de aceite"
+        AIRE = "AIRE", "Filtro de aire"
+        GASOLINA = "GASOLINA", "Filtro de gasolina"
+        OTRO = "OTRO", "Otro"
+
+    proveedor = models.ForeignKey(Proveedor, on_delete=models.CASCADE, related_name="partidas_lista")
+    codigo = models.CharField(max_length=60)
+    tipo = models.CharField(max_length=10, choices=Tipo.choices, default=Tipo.OTRO)
+    descripcion = models.CharField(max_length=200)
+    marca = models.CharField(max_length=80, db_index=True)
+    aplicacion = models.TextField(blank=True, help_text="Texto del proveedor, tal cual")
+    costo = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True, help_text="Sin IVA")
+    equivalencia = models.CharField(max_length=60, blank=True, db_index=True)
+    fecha_lista = models.DateField()
+    archivo_origen = models.CharField(max_length=200, blank=True)
+    producto = models.ForeignKey(
+        Producto, null=True, blank=True, on_delete=models.SET_NULL, related_name="partidas_proveedor",
+        help_text="Producto de mi catálogo, si ya lo surto",
+    )
+
+    class Meta:
+        ordering = ["marca", "codigo"]
+        constraints = [models.UniqueConstraint(fields=["proveedor", "codigo"], name="uniq_partida_proveedor")]
+        indexes = [models.Index(fields=["codigo"])]
+
+    def __str__(self):
+        return f"{self.proveedor} · {self.codigo} ({self.marca})"
