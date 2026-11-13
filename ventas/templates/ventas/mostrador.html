@@ -1,0 +1,164 @@
+{% extends "ventas/base.html" %}
+{% load erp %}
+{% block titulo %}{% if veh %}{{ veh }}{% else %}Mostrador{% endif %}{% endblock %}
+{% block contenido %}
+
+<section class="encabezado">
+  <div style="min-width: 0">
+    <div class="migas" aria-label="Vehículo">
+      <a class="miga{% if paso == 'anio' %} activa{% endif %}" href="{% url 'mostrador' %}">{{ anio|default:"Año" }}</a>
+      {% if anio %}<span class="sep" aria-hidden="true">›</span>
+      <a class="miga{% if paso == 'armadora' %} activa{% endif %}" href="{% url 'mostrador' %}?anio={{ anio }}">{{ armadora|default:"Armadora" }}</a>{% endif %}
+      {% if armadora %}<span class="sep" aria-hidden="true">›</span>
+      <a class="miga{% if paso == 'modelo' %} activa{% endif %}" href="{% url 'mostrador' %}?anio={{ anio }}&amp;armadora={{ armadora|urlencode }}">{{ modelo|default:"Modelo" }}</a>{% endif %}
+      {% if modelo %}<span class="sep" aria-hidden="true">›</span>
+      <a class="miga{% if paso == 'litros' or paso == 'ficha' %} activa{% endif %}" href="{% url 'mostrador' %}?anio={{ anio }}&amp;armadora={{ armadora|urlencode }}&amp;modelo={{ modelo|urlencode }}">{% if veh.litros %}{{ veh.litros }} L{% elif paso == 'ficha' %}Todos los motores{% else %}Motor{% endif %}</a>{% endif %}
+    </div>
+    {% if veh %}
+      <h1 class="vehiculo">{{ veh.armadora }} {{ veh.modelo }} {{ veh.anio }}</h1>
+    {% elif paso == 'anio' %}
+      <h1 class="vehiculo">¿Qué vehículo es?</h1>
+    {% elif paso == 'armadora' %}
+      <h1 class="vehiculo">Armadora · {{ anio }}</h1>
+    {% elif paso == 'modelo' %}
+      <h1 class="vehiculo">{{ armadora }} {{ anio }}</h1>
+    {% else %}
+      <h1 class="vehiculo">{{ armadora }} {{ modelo }} {{ anio }}</h1>
+    {% endif %}
+  </div>
+  {% if paso == 'ficha' %}<span class="sub">{{ elegidas }} de 5 piezas elegidas</span>{% endif %}
+</section>
+
+<div class="mesa">
+
+{% if paso == 'ficha' %}
+  <section class="panel piezas" aria-label="Piezas de la afinación">
+    <div class="diagrama">
+      <svg viewBox="0 0 560 440" aria-hidden="true">
+        <defs><pattern id="g" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M20 0H0V20" fill="none" stroke="#E1E6F2" stroke-width="1"/></pattern></defs>
+        <rect width="560" height="440" fill="url(#g)"/>
+        <rect x="150" y="120" width="260" height="200" rx="12" fill="#FFFFFF" stroke="#8C9BC9" stroke-width="2.5"/>
+        <rect x="175" y="140" width="210" height="90" rx="10" fill="#EEF1F8" stroke="#8C9BC9" stroke-width="2"/>
+        <circle cx="205" cy="185" r="12" fill="#FFFFFF" stroke="#8C9BC9" stroke-width="2"/>
+        <circle cx="250" cy="185" r="12" fill="#FFFFFF" stroke="#8C9BC9" stroke-width="2"/>
+        <circle cx="295" cy="185" r="12" fill="#FFFFFF" stroke="#8C9BC9" stroke-width="2"/>
+        <circle cx="340" cy="185" r="12" fill="#FFFFFF" stroke="#8C9BC9" stroke-width="2"/>
+        <path d="M175 252 H385 M175 272 H385 M175 292 H385" stroke="#D5DAE8" stroke-width="2"/>
+        <rect x="22" y="150" width="100" height="110" rx="10" fill="#EEF1F8" stroke="#8C9BC9" stroke-width="2"/>
+        <path d="M122 205 H150" stroke="#8C9BC9" stroke-width="10" stroke-linecap="round"/>
+        <rect x="254" y="330" width="52" height="64" rx="10" fill="#EEF1F8" stroke="#8C9BC9" stroke-width="2"/>
+        <path d="M280 320 V330" stroke="#8C9BC9" stroke-width="6"/>
+        <path d="M540 102 H500 M430 102 H410 V140" fill="none" stroke="#8C9BC9" stroke-width="3"/>
+        <rect x="430" y="90" width="70" height="24" rx="12" fill="#EEF1F8" stroke="#8C9BC9" stroke-width="2"/>
+        <circle cx="362" cy="156" r="8" fill="#8C9BC9"/>
+      </svg>
+      {% for f in posiciones %}
+        <a class="numero{% if f.actual %} actual{% elif f.elegida %} lista{% endif %}" href="{{ f.url }}" style="left: {{ f.p.x }}%; top: {{ f.p.y }}%" aria-label="Ver {{ f.p.nombre }}">{{ f.p.n }}</a>
+      {% endfor %}
+    </div>
+    <div class="lista-piezas">
+      {% for f in posiciones %}
+        <a class="fila-pieza{% if f.elegida %} lista{% endif %}" href="{{ f.url }}" aria-current="{% if f.actual %}true{% else %}false{% endif %}">
+          <span class="insignia">{{ f.p.n }}</span>
+          <span style="font-weight: 700">{{ f.p.nombre }}</span>
+          <span class="estado">{% if f.elegida %}listo{% else %}elegir{% endif %}</span>
+        </a>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="centro" aria-label="Opciones de la pieza">
+    <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px 16px">
+      <h2 class="seccion">{{ actual.n }} · {{ actual.nombre }}</h2>
+      <span class="sub">{{ listas }} niveles · {{ en_anaquel }} en anaquel{% if actual.cantidad > 1 %} · lleva {{ actual.cantidad|cant }}{% endif %}</span>
+    </div>
+    <div class="niveles">
+      {% for n in niveles %}
+        {% if n.op %}
+        <article class="tarjeta{% if n.en_ticket %} en-ticket{% endif %}">
+          <span class="etiqueta">{{ n.nombre }}</span>
+          <div>
+            <div class="codigo">{{ n.op.codigo }}</div>
+            <div class="marca-pieza">{{ n.op.marca }}</div>
+            {% if n.op.rango %}<div class="rango">Le queda: {{ n.op.rango }}</div>{% endif %}
+            {% if n.op.advertencia %}<div class="existencia pedir">Ojo, la lista dice: {{ n.op.advertencia|lower|capfirst }}</div>{% endif %}
+          </div>
+          {% if n.op.sobre_pedido %}
+            <div class="existencia pedir">Sin existencia · se pide{% if n.op.proveedor %} a {{ n.op.proveedor }}{% endif %}</div>
+          {% else %}
+            <div class="existencia">Hay {{ n.op.existencia|cant }} en anaquel</div>
+          {% endif %}
+          <div class="precio">
+            {% if n.op.precio is not None %}
+              <strong>{{ n.op.precio|por:actual.cantidad|pesos }}</strong>
+              {% if actual.cantidad > 1 %}<span>{{ n.op.precio|pesos }} c/u × {{ actual.cantidad|cant }}</span>{% endif %}
+              {% if n.op.existencia is None %}<span>precio sugerido</span>{% endif %}
+            {% else %}<strong>Sin precio</strong>{% endif %}
+          </div>
+          <form method="post" action="{% url 'ticket_agregar' %}">{% csrf_token %}
+            <input type="hidden" name="clave" value="{{ n.op.clave }}"><input type="hidden" name="pos" value="{{ actual.clave }}">
+            <input type="hidden" name="nivel" value="{{ n.clave }}">
+            {% for k, v in base.items %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+            <input type="hidden" name="next" value="{{ aqui }}">
+            {% if n.op.precio is None %}
+              <button class="btn-agregar" type="submit" disabled>Falta precio</button>
+            {% elif n.en_ticket %}
+              <button class="btn-agregar puesto" type="submit">En el ticket</button>
+            {% elif n.op.sobre_pedido %}
+              <button class="btn-agregar pedir" type="submit">Agregar sobre pedido</button>
+            {% else %}
+              <button class="btn-agregar" type="submit">Agregar</button>
+            {% endif %}
+          </form>
+        </article>
+        {% else %}
+        <div class="tarjeta vacia">
+          <span class="etiqueta">{{ n.nombre }}</span>
+          <span>{% if actual.tipo_partida %}Ni mi catálogo ni la lista del proveedor tienen opción de este nivel para el vehículo.{% elif actual.generica %}Sin opción de este nivel en mi catálogo. Al dar de alta {{ actual.familia|lower }} con su nivel, aparecen aquí.{% else %}Sin opción de este nivel en mi catálogo. Al dar de alta {{ actual.familia|lower }} con su nivel y aplicación, aparecen aquí.{% endif %}</span>
+        </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+    {% if otras %}
+    <div class="otras">
+      <span style="font-size: 13px; font-weight: 700">Más opciones:</span>
+      {% for o in otras %}
+        <form method="post" action="{% url 'ticket_agregar' %}">{% csrf_token %}
+          <input type="hidden" name="clave" value="{{ o.clave }}"><input type="hidden" name="pos" value="{{ actual.clave }}">
+          <input type="hidden" name="nivel" value="{{ o.nivel }}">
+          {% for k, v in base.items %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+          <input type="hidden" name="next" value="{{ aqui }}">
+          <button class="chip{% if not o.sobre_pedido %} hay{% endif %}" type="submit"{% if o.precio is None %} disabled{% endif %}>{{ o.codigo }} {{ o.marca }} · {{ o.precio|pesos|default:"sin precio" }}{% if o.sobre_pedido %} · pedir{% endif %}</button>
+        </form>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <p class="nota">Los niveles salen de mi catálogo; si un nivel está vacío se llena con la lista del proveedor por tercios de costo (la más barata es Económico). Lo que no hay en anaquel lleva precio sugerido de costo + {{ sobreprecio }}% + IVA y se cobra al entregar.</p>
+  </section>
+
+{% else %}
+  <section class="centro" aria-label="Elegir vehículo">
+    <form class="buscar" method="get" action="{% url 'mostrador' %}" role="search">
+      <input name="q" placeholder="Escribe el vehículo: tsuru 2003, vw jetta 04 2.0, vocho 95" aria-label="Buscar vehículo" autocomplete="off"{% if paso == 'anio' %} autofocus{% endif %}>
+      <button class="btn" type="submit">Buscar</button>
+    </form>
+    {% if paso == 'anio' %}
+      <div class="rejilla anios">
+        {% for a in anios %}<a class="opcion" href="?anio={{ a }}"><strong>{{ a }}</strong></a>{% endfor %}
+      </div>
+    {% else %}
+      {% if paso == 'litros' %}<p class="sub">¿Qué motor trae? Si el cliente no sabe, <a href="{{ todos }}">ver todos los motores</a>.</p>{% endif %}
+      <div class="rejilla">
+        {% for valor, n, url in opciones %}
+          <a class="opcion" href="{{ url }}"><strong>{{ valor }}</strong><span>{{ n }} pieza{{ n|pluralize }} en listas</span></a>
+        {% empty %}
+          <p class="sub">No hay piezas en las listas para este año. Prueba con otro año o busca por texto.</p>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </section>
+{% endif %}
+
+  {% include "ventas/_ticket.html" %}
+</div>
+{% endblock %}

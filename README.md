@@ -7,7 +7,7 @@ ERP a la medida para refaccionaria de afinación, lubricantes y químicos automo
 | Fase | Contenido | Estado |
 |---|---|---|
 | Mes 1 | Catálogo (equivalencias, aplicaciones vehiculares, kits, unidades), inventario con lote/caducidad FEFO y costo promedio, compras con recepción parcial | Modelo de datos y reglas listos |
-| Mes 2 | Punto de venta, clientes, crédito a talleres, corte de caja | Reglas de venta listas; falta la pantalla de mostrador |
+| Mes 2 | Punto de venta, clientes, crédito a talleres, corte de caja | Reglas de venta y pantalla de mostrador listas |
 | Mes 3 | Reportes ABC, rotación, punto de reorden, caducidades; carga de catálogo; pruebas | Pendiente |
 | Fase 2 | CFDI 4.0 vía PAC | Pendiente |
 
@@ -43,6 +43,18 @@ python manage.py interpretar_aplicaciones
 ## Ventas (app `ventas`)
 
 `ventas/servicios.py` concentra las reglas: `abrir_turno`, `registrar_venta` (precio según la lista del cliente, salida de inventario con conversión de unidades y FEFO, todo o nada), `cancelar_venta` (regresa al mismo lote y costo), `registrar_abono` y `cerrar_turno` (esperado contra contado por forma de pago). El crédito se valida contra días y límite del cliente. Cada producto lleva un nivel (Económico, Estándar, Premium) para ofrecerlo en mostrador.
+
+## Mostrador
+
+`python manage.py runserver` y entrar en http://127.0.0.1:8000/ con un usuario del sistema. Es la pantalla táctil del diseño elegido:
+
+1. Se elige el vehículo por año › armadora › modelo › motor, o se escribe ("tsuru 2003", "vocho 95").
+2. Para cada pieza de la afinación (filtros de aceite, aire y gasolina, bujías, aceite de motor) salen tres tarjetas: Económico, Estándar y Premium. Primero van mis productos por su nivel; si un nivel queda vacío se llena con la lista del proveedor, repartida por tercios de costo. Cada tarjeta dice de dónde sale que le queda ("Le queda: Tsuru 1990–2004") y si hay en anaquel.
+3. Lo que no hay se agrega "sobre pedido" con precio sugerido de costo + 37% + IVA (`SOBREPRECIO_PEDIDO`).
+4. Al cobrar se registra la venta de lo que hay (necesita caja abierta) y lo sobre pedido queda en una orden de compra de emergencia en borrador para el proveedor, con el cliente y el vehículo en las notas. Lo sobre pedido no se cobra ese día. La pieza se da de alta en mi catálogo con el nivel y el precio cotizados.
+5. En Caja se abre el turno con el fondo y se hace el corte contando a ciegas por forma de pago; el sistema muestra la diferencia contra lo esperado.
+
+Bujías y aceite de motor no vienen en las listas de filtros de MORSA: aparecen cuando se dan de alta en el catálogo (familias "Bujías" y "Aceites de motor") con su nivel; las bujías además con su aplicación.
 
 ## Reglas clave
 

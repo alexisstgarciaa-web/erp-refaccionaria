@@ -1,0 +1,61 @@
+{% extends "ventas/base.html" %}
+{% load erp %}
+{% block titulo %}Caja{% endblock %}
+{% block contenido %}
+<section class="encabezado">
+  <div>
+    <h1 class="vehiculo">Caja</h1>
+    <p class="sub">{% if turno %}Turno abierto desde {{ turno.abierto|date:"j M Y, H:i" }} con fondo de {{ turno.fondo_inicial|pesos }}.{% else %}No tienes turno abierto.{% endif %}</p>
+  </div>
+</section>
+
+{% if corte %}
+<section class="panel" style="padding: 20px; display: flex; flex-direction: column; gap: 12px">
+  <h2 class="seccion">Corte del turno</h2>
+  <table class="tabla">
+    <thead><tr><th>Forma de pago</th><th class="num">Esperado</th><th class="num">Contado</th><th class="num">Diferencia</th></tr></thead>
+    <tbody>
+      {% for nombre, esperado, contado, dif in corte_filas %}
+      <tr><td>{{ nombre }}</td><td class="num">{{ esperado|pesos }}</td><td class="num">{{ contado|pesos }}</td><td class="num {% if dif < 0 %}rojo{% elif dif > 0 %}verde{% endif %}">{{ dif|pesos }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div>Diferencia total: <span class="cifra {% if corte.diferencia < 0 %}rojo{% elif corte.diferencia > 0 %}verde{% endif %}">{{ corte.diferencia|pesos }}</span></div>
+</section>
+{% endif %}
+
+{% if not turno %}
+<section class="panel" style="padding: 20px">
+  <form method="post" class="formulario">{% csrf_token %}
+    <input type="hidden" name="accion" value="abrir">
+    <label class="campo">Fondo inicial en efectivo <input name="fondo" inputmode="decimal" value="0" required></label>
+    <button class="btn" type="submit">Abrir caja</button>
+  </form>
+</section>
+{% else %}
+<section class="panel" style="padding: 20px; display: flex; flex-direction: column; gap: 14px">
+  <h2 class="seccion">Cerrar turno</h2>
+  <p class="sub">Cuenta lo que hay por forma de pago. El sistema compara contra lo esperado: ventas de contado, abonos y el fondo.</p>
+  <form method="post" class="formulario">{% csrf_token %}
+    <input type="hidden" name="accion" value="cerrar">
+    {% for nombre, campo, esperado in esperado %}
+      <label class="campo">{{ nombre }} contado <input name="{{ campo }}" inputmode="decimal" required placeholder="0"></label>
+    {% endfor %}
+    <button class="btn" type="submit">Hacer corte</button>
+  </form>
+</section>
+<section style="display: flex; flex-direction: column; gap: 10px">
+  <h2 class="seccion">Ventas del turno</h2>
+  <table class="tabla">
+    <thead><tr><th>Folio</th><th>Cliente</th><th>Pago</th><th>Estado</th><th class="num">Total</th></tr></thead>
+    <tbody>
+      {% for v in ventas %}
+      <tr><td>{{ v.folio }}</td><td>{{ v.cliente }}</td><td>{{ v.get_forma_pago_display }}</td><td>{{ v.get_estado_display }}</td><td class="num">{{ v.total|pesos }}</td></tr>
+      {% empty %}
+      <tr><td colspan="5" class="sub">Todavía no hay ventas en este turno.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}

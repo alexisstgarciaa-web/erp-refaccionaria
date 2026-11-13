@@ -1,0 +1,49 @@
+{% load erp %}
+<aside class="ticket" aria-label="Ticket">
+  <div class="cab"><strong>Ticket</strong><span class="tenue">{% if turno %}Turno {{ turno.abierto|date:"H:i" }}{% else %}Caja cerrada{% endif %}</span></div>
+
+  <form method="post" action="{% url 'ticket_cliente' %}">{% csrf_token %}
+    <input type="hidden" name="next" value="{{ aqui }}">
+    <label class="tenue" for="cliente">Cliente · lista {{ cliente.lista_precio }}</label>
+    <div style="display: flex; gap: 6px; margin-top: 4px">
+      <select id="cliente" name="cliente" onchange="this.form.submit()">
+        {% for c in clientes %}<option value="{{ c.pk }}"{% if c.pk == cliente.pk %} selected{% endif %}>{{ c }}{% if c.dias_credito %} · crédito {{ c.dias_credito }} días{% endif %}</option>{% endfor %}
+      </select>
+      <noscript><button class="btn claro" type="submit" style="height: 44px">Cambiar</button></noscript>
+    </div>
+  </form>
+
+  {% if not lineas %}<p class="tenue" style="margin: 0; font-size: 13px">Toca un número del motor o una pieza de la lista y elige un nivel.</p>{% endif %}
+
+  <div>
+    {% for ln in lineas %}{% if not ln.sobre_pedido %}
+      {% include "ventas/_renglon.html" %}
+    {% endif %}{% endfor %}
+  </div>
+  {% if pedido_total %}
+    <div class="subtitulo-ticket">Sobre pedido · se cobra al entregar</div>
+    <div>
+      {% for ln in lineas %}{% if ln.sobre_pedido %}
+        {% include "ventas/_renglon.html" %}
+      {% endif %}{% endfor %}
+    </div>
+    <div class="tenue">Cotizado: {{ pedido_total|pesos }}. Al cobrar queda una orden de compra en borrador.</div>
+  {% endif %}
+
+  <form method="post" action="{% url 'ticket_cobrar' %}" style="margin-top: auto; display: flex; flex-direction: column; gap: 10px">{% csrf_token %}
+    <input type="hidden" name="next" value="{{ aqui }}">
+    {% for k, v in base.items %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+    <div><div class="tenue">Total hoy · IVA incluido {{ iva|floatformat:2 }}</div><div class="total">{{ total|pesos }}</div></div>
+    <fieldset class="pagos">
+      <legend class="tenue" style="grid-column: 1 / -1; padding: 0; margin-bottom: 4px">Forma de pago</legend>
+      {% for fp in pagos %}
+        <label><input type="radio" name="forma_pago" value="{{ fp.value }}"{% if forloop.first %} checked{% endif %}><span>{{ fp.label }}</span></label>
+      {% endfor %}
+    </fieldset>
+    {% if turno %}
+      <button class="cobrar" type="submit"{% if not lineas %} disabled{% endif %}>{% if total %}Cobrar {{ total|pesos }}{% elif lineas %}Registrar pedido{% else %}Cobrar{% endif %}</button>
+    {% else %}
+      <a class="cobrar" href="{% url 'caja' %}">Abrir caja para cobrar</a>
+    {% endif %}
+  </form>
+</aside>

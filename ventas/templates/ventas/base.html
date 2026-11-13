@@ -1,0 +1,32 @@
+{% load static %}<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block titulo %}Mostrador{% endblock %} · {{ negocio }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Saira+Condensed:wght@600;700;800&display=swap">
+<link rel="stylesheet" href="{% static 'ventas/erp.css' %}">
+</head>
+<body>
+<header class="barra">
+  <div class="marca"><span class="nombre">{{ negocio }}</span><span>Refacciones</span></div>
+  {% if user.is_authenticated %}
+  <nav aria-label="Módulos">
+    {% url 'mostrador' as u_mostrador %}{% url 'caja' as u_caja %}
+    <a class="pildora" href="{{ u_mostrador }}"{% if request.path == u_mostrador %} aria-current="page"{% endif %}>Mostrador</a>
+    <a class="pildora" href="{{ u_caja }}"{% if request.path == u_caja %} aria-current="page"{% endif %}>Caja</a>
+    {% if user.is_staff %}<a class="pildora" href="{% url 'admin:index' %}">Administración</a>{% endif %}
+  </nav>
+  <span class="quien">{% if turno %}Caja abierta{% else %}Caja cerrada{% endif %} · {{ user.get_short_name|default:user.get_username }}
+    <form method="post" action="{% url 'salir' %}">{% csrf_token %}<button type="submit">Salir</button></form>
+  </span>
+  {% endif %}
+</header>
+<main>
+  {% if messages %}<div class="avisos" role="status">{% for msg in messages %}<div class="aviso {{ msg.tags }}">{{ msg }}</div>{% endfor %}</div>{% endif %}
+  {% block contenido %}{% endblock %}
+</main>
+</body>
+</html>
