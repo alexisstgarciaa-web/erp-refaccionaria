@@ -52,7 +52,9 @@ class MostradorTests(TestCase):
         r = self.client.get(reverse("mostrador"), {"anio": 2003, "armadora": "Nissan", "modelo": "Tsuru"})
         self.assertContains(r, "Nissan Tsuru 2003")
         self.assertContains(r, "PH966B")
-        self.assertContains(r, "Agregar sobre pedido")
+        self.assertContains(r, "Hoja de afinación")
+        self.assertContains(r, 'class="sello pedido"')
+        self.assertContains(r, "Llevar estándar")
 
     def test_cobrar_vende_lo_que_hay_y_pide_lo_que_no(self):
         abrir = self.client.post(reverse("caja"), {"accion": "abrir", "fondo": "500"})
@@ -60,8 +62,9 @@ class MostradorTests(TestCase):
         base = {"anio": 2003, "armadora": "Nissan", "modelo": "Tsuru", "litros": "1.6"}
         fram = f"producto:{self.fram.pk}"
         ca = f"partida:{PartidaListaProveedor.objects.get(codigo='CA6900').pk}"
-        r = self.client.post(reverse("ticket_agregar"), {"clave": fram, "pos": "aceite", "nivel": "STD", **base})
-        self.assertIn("pos=aire", r["Location"])  # pasa sola a la siguiente pieza
+        r = self.client.post(reverse("ticket_agregar"), {"clave": fram, "pos": "aceite", "nivel": "STD", **base,
+                                                         "next": "/?anio=2003&armadora=Nissan&modelo=Tsuru"})
+        self.assertEqual(r["Location"], "/?anio=2003&armadora=Nissan&modelo=Tsuru")  # regresa a la misma hoja
         self.client.post(reverse("ticket_agregar"), {"clave": ca, "pos": "aire", "nivel": "PRE", **base})
         self.client.post(reverse("ticket_cantidad", args=[0]), {"cantidad": "2"})
 
@@ -114,3 +117,15 @@ class MostradorTests(TestCase):
         r = self.client.get(reverse("mostrador"))
         self.assertEqual(r.status_code, 302)
         self.assertIn(reverse("entrar"), r["Location"])
+
+    def test_llevar_afinacion_completa_de_un_nivel(self):
+        base = {"anio": 2003, "armadora": "Nissan", "modelo": "Tsuru", "litros": "1.6"}
+        self.client.post(reverse("ticket_afinacion"), {"nivel": "STD", **base})
+        lineas = self.client.session["ticket"]["lineas"]
+        self.assertEqual(sorted((ln["pos"], ln["nivel"]) for ln in lineas),
+                         [("aceite", "STD"), ("aire", "STD"), ("gasolina", "STD")])
+        # cambiar a Premium reemplaza solo las piezas que tienen opción Premium
+        self.client.post(reverse("ticket_afinacion"), {"nivel": "PRE", **base})
+        lineas = self.client.session["ticket"]["lineas"]
+        self.assertEqual(len(lineas), 3)
+        self.assertEqual({ln["pos"]: ln["nivel"] for ln in lineas}["aceite"], "PRE")

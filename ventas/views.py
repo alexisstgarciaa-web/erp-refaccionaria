@@ -93,7 +93,7 @@ def mostrador(request):
             if not litros:
                 litros = ops[0][0] if ops else "todos"
             veh = m.Vehiculo(anio, armadora, modelo, "" if litros == "todos" else litros)
-            ctx.update(_ficha(request, ticket, veh, litros, g.get("pos")))
+            ctx.update(_ficha(request, ticket, veh, litros))
     ctx["lineas"] = lineas = ticket.lineas(ctx.get("veh"))
     vender = [ln for ln in lineas if not ln.sobre_pedido]
     ctx["total"] = total = sum((ln.importe for ln in vender), Decimal(0))
@@ -104,25 +104,29 @@ def mostrador(request):
     return render(request, "ventas/mostrador.html", ctx)
 
 
-def _ficha(request, ticket, veh, litros_param, pos_clave):
+def _ficha(request, ticket, veh, litros_param, pos_clave=None):
+    """Hoja de afinación: todas las piezas (renglones) por los tres niveles (columnas), más el total
+    de la afinación completa en cada nivel, que es lo primero que pregunta el cliente."""
     elegidas = ticket.por_posicion()
-    actual = m.POR_CLAVE.get(pos_clave) or next((p for p in m.POSICIONES if p.clave not in elegidas), m.POSICIONES[0])
     lista = ticket.cliente.lista_precio
-    tarjetas, otras = m.opciones_de(veh, actual, lista)
-    en_ticket = elegidas.get(actual.clave, {}).get("clave")
     base = dict(anio=veh.anio, armadora=veh.armadora, modelo=veh.modelo, litros=litros_param)
-    posiciones = []
+    filas, totales = [], {k: {"clave": k, "nombre": n, "total": Decimal(0), "piezas": 0, "pedido": 0} for k, n in m.NIVELES}
     for p in m.POSICIONES:
-        ln = elegidas.get(p.clave)
-        posiciones.append({"p": p, "url": _url(**base, pos=p.clave), "actual": p == actual,
-                           "elegida": ln["clave"].split(":")[0] if ln else None})
-    niveles = [{"clave": k, "nombre": nombre, "op": tarjetas[k], "en_ticket": tarjetas[k] and tarjetas[k].clave == en_ticket}
-               for k, nombre in m.NIVELES]
-    return {"paso": "ficha", "veh": veh, "actual": actual, "niveles": niveles, "otras": otras[:8],
-            "posiciones": posiciones, "listas": len([n for n in niveles if n["op"]]),
-            "en_anaquel": len([n for n in niveles if n["op"] and not n["op"].sobre_pedido]),
-            "elegidas": len(elegidas), "url_cambiar": _url(anio=veh.anio, armadora=veh.armadora), "base": base,
-            "sobreprecio": int(m.sobreprecio() * 100)}
+        tarjetas, otras = m.opciones_de(veh, p, lista)
+        en_ticket = elegidas.get(p.clave, {}).get("clave")
+        celdas = []
+        for k, nombre in m.NIVELES:
+            op = tarjetas[k]
+            celdas.append({"nivel": k, "nombre": nombre, "op": op, "en_ticket": bool(op and op.clave == en_ticket)})
+            if op and op.precio is not None:
+                totales[k]["total"] += op.precio * p.cantidad
+                totales[k]["piezas"] += 1
+                totales[k]["pedido"] += op.sobre_pedido
+        otras_en_ticket = next((o for o in otras if o.clave == en_ticket), None)
+        filas.append({"p": p, "celdas": celdas, "otras": otras[:8], "mas": max(len(otras) - 8, 0),
+                      "elegida": bool(en_ticket), "otra_elegida": otras_en_ticket})
+    return {"paso": "ficha", "veh": veh, "filas": filas, "totales": list(totales.values()), "base": base,
+            "elegidas": len(elegidas), "sobreprecio": int(m.sobreprecio() * 100)}
 
 
 @login_required
@@ -134,12 +138,28 @@ def agregar(request):
     except (KeyError, ValidationError, ObjectDoesNotExist):
         messages.error(request, "Esa opción ya no existe; vuelve a elegir.")
         return _volver(request)
-    veh = {k: request.POST.get(k, "") for k in ("anio", "armadora", "modelo", "litros")}
-    if not veh["anio"].isdigit():
+    return _volver(request)
+
+
+@login_required
+@require_POST
+def agregar_afinacion(request):
+    """Lleva al ticket la afinación completa de un nivel: la opción de ese nivel en cada pieza que la tenga."""
+    g = request.POST
+    if not g.get("anio", "").isdigit() or g.get("nivel") not in dict(m.NIVELES):
         return _volver(request)
-    # pasa sola a la siguiente pieza pendiente, como en el diseño
-    pendientes = [p.clave for p in m.POSICIONES if p.clave not in ticket.por_posicion()]
-    return redirect(_url(**veh, pos=pendientes[0] if pendientes else request.POST.get("pos")))
+    litros = g.get("litros", "")
+    veh = m.Vehiculo(int(g["anio"]), g.get("armadora", ""), g.get("modelo", ""), "" if litros == "todos" else litros)
+    ticket = m.Ticket(request.session)
+    n = 0
+    for p in m.POSICIONES:
+        op = m.opciones_de(veh, p, ticket.cliente.lista_precio)[0][g["nivel"]]
+        if op and op.precio is not None:
+            ticket.agregar(op.clave, p.clave, nivel=g["nivel"])
+            n += 1
+    if not n:
+        messages.warning(request, "No hay piezas de ese nivel para este vehículo.")
+    return _volver(request)
 
 
 @login_required

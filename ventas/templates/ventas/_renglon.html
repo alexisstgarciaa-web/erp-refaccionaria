@@ -1,10 +1,9 @@
 {% load erp %}
 <div class="renglon">
-  <span style="font-weight: 600">{% if ln.pos %}{{ ln.pos.nombre }}{% else %}{{ ln.opcion.codigo }}{% endif %}</span>
-  <span style="font-weight: 700">{{ ln.importe|pesos|default:"sin precio" }}</span>
-  <span class="tenue" style="grid-column: 1 / -1">{{ ln.opcion.codigo }} {{ ln.opcion.marca }} · {{ ln.opcion.precio|pesos }} × {{ ln.cantidad|cant }} {{ ln.opcion.unidad|lower }}{% if ln.sobre_pedido and ln.opcion.existencia %} · hay {{ ln.opcion.existencia|cant }}{% endif %}</span>
+  <div class="linea1"><span>{{ ln.opcion.codigo }}</span><span>{{ ln.importe|pesos|default:"sin precio" }}</span></div>
+  <div class="tenue">{% if ln.pos %}{{ ln.pos.nombre }} · {% endif %}{{ ln.opcion.marca }} · {{ ln.cantidad|cant }} × {{ ln.opcion.precio|pesos }}{% if ln.sobre_pedido and ln.opcion.existencia %} · hay {{ ln.opcion.existencia|cant }}{% endif %}</div>
   <div class="acciones">
-    <form method="post" action="{% url 'ticket_cantidad' ln.i %}" style="display: flex; gap: 6px; align-items: center">{% csrf_token %}
+    <form method="post" action="{% url 'ticket_cantidad' ln.i %}">{% csrf_token %}
       <input type="hidden" name="next" value="{{ aqui }}">
       <label class="tenue">Cant. <input type="number" name="cantidad" value="{{ ln.cantidad|cant }}" min="0" step="{% if ln.fraccion %}0.1{% else %}1{% endif %}" onchange="this.form.submit()" aria-label="Cantidad de {{ ln.opcion.codigo }}"></label>
     </form>
