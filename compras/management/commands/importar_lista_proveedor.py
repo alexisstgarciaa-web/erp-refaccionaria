@@ -28,4 +28,5 @@ class Command(BaseCommand):
         res = importar(proveedor, archivos, date.fromisoformat(fecha) if fecha else None)
         self.stdout.write(self.style.SUCCESS(
             f"{len(archivos)} archivos · {res['nuevas']} partidas nuevas · {res['actualizadas']} actualizadas "
-            f"({res['costos_cambiados']} con costo distinto) · {res['sin_costo']} sin costo"))
+            f"({res['costos_cambiados']} con costo distinto) · {res['sin_costo']} sin costo · "
+            f"{res['vehiculos']:,} vehículos interpretados"))
