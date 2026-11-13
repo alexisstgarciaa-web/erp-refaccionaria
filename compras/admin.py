@@ -1,6 +1,41 @@
-from django.contrib import admin
+import tempfile
+from pathlib import Path
+
+from django import forms
+from django.contrib import admin, messages
+from django.core.exceptions import ValidationError
+from django.shortcuts import redirect, render
+from django.urls import path
+from django.utils import timezone
 
 from . import models as m
+
+
+class VariosArchivos(forms.ClearableFileInput):
+    allow_multiple_selected = True
+
+
+class CampoVariosArchivos(forms.FileField):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("widget", VariosArchivos(attrs={"accept": ".xlsx"}))
+        super().__init__(*args, **kwargs)
+
+    def clean(self, data, initial=None):
+        archivos = data if isinstance(data, (list, tuple)) else [data]
+        limpios = [super(CampoVariosArchivos, self).clean(a, initial) for a in archivos if a]
+        if not limpios:
+            raise ValidationError("Elige al menos un archivo .xlsx.")
+        for a in limpios:
+            if not a.name.lower().endswith(".xlsx"):
+                raise ValidationError(f"{a.name} no es .xlsx.")
+        return limpios
+
+
+class ImportarListaForm(forms.Form):
+    proveedor = forms.CharField(initial="MORSA", max_length=150)
+    fecha = forms.DateField(label="Fecha de la lista", initial=timezone.localdate,
+                            widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}))  # el navegador exige AAAA-MM-DD
+    archivos = CampoVariosArchivos(label="Archivos .xlsx")
 
 
 class ProductoProveedorInline(admin.TabularInline):
@@ -29,6 +64,24 @@ class OrdenCompraAdmin(admin.ModelAdmin):
     list_filter = ["estado", "es_emergencia", "proveedor"]
     search_fields = ["folio"]
     inlines = [LineaInline]
+    actions = ["recibir_todo"]
+
+    @admin.action(description="Recibir todo lo pendiente (entra al inventario)")
+    def recibir_todo(self, request, queryset):
+        from .servicios import recibir
+
+        for oc in queryset:
+            pendientes = [ln for ln in oc.lineas.select_related("producto") if ln.pendiente > 0]
+            if any(ln.producto.maneja_lote for ln in pendientes):
+                self.message_user(request, f"{oc.folio} trae productos con lote: recíbela línea por línea.", messages.WARNING)
+                continue
+            if not pendientes:
+                continue
+            try:
+                recibir(oc, [{"linea": ln, "cantidad": ln.pendiente} for ln in pendientes], usuario=request.user)
+                self.message_user(request, f"{oc.folio}: {len(pendientes)} partidas recibidas.", messages.SUCCESS)
+            except ValidationError as e:
+                self.message_user(request, f"{oc.folio}: {' '.join(e.messages)}", messages.ERROR)
 
 
 class VehiculoPartidaInline(admin.TabularInline):
@@ -51,6 +104,32 @@ class PartidaListaProveedorAdmin(admin.ModelAdmin):
     readonly_fields = ["producto"]
     actions = ["agregar_a_catalogo"]
     inlines = [VehiculoPartidaInline]
+
+    def get_urls(self):
+        return [path("importar/", self.admin_site.admin_view(self.importar), name="compras_partida_importar")] + super().get_urls()
+
+    def importar(self, request):
+        from .listas import importar
+
+        form = ImportarListaForm(request.POST or None, request.FILES or None)
+        if request.method == "POST" and form.is_valid():
+            with tempfile.TemporaryDirectory() as carpeta:
+                rutas = []
+                for a in form.cleaned_data["archivos"]:
+                    ruta = Path(carpeta) / Path(a.name).name
+                    with open(ruta, "wb") as f:
+                        for trozo in a.chunks():
+                            f.write(trozo)
+                    rutas.append(ruta)
+                res = importar(form.cleaned_data["proveedor"], rutas, form.cleaned_data["fecha"])
+            self.message_user(request, (
+                f"{len(rutas)} archivos · {res['nuevas']} partidas nuevas · {res['actualizadas']} actualizadas "
+                f"({res['costos_cambiados']} con costo distinto) · {res['sin_costo']} sin costo · "
+                f"{res['vehiculos']:,} vehículos interpretados."), messages.SUCCESS)
+            return redirect("admin:compras_partidalistaproveedor_changelist")
+        ctx = {**self.admin_site.each_context(request), "form": form, "title": "Importar lista de proveedor",
+               "opts": self.model._meta}
+        return render(request, "admin/compras/partidalistaproveedor/importar.html", ctx)
 
     def get_search_results(self, request, queryset, search_term):
         from .aplicaciones import buscar, leer_consulta

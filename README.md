@@ -22,13 +22,22 @@ python manage.py runserver   # http://127.0.0.1:8000/admin
 python manage.py test
 ```
 
+## Probarlo en la nube (Render, plan gratis)
+
+1. En render.com, entrar con la cuenta de GitHub.
+2. New › Blueprint › repositorio `erp-refaccionaria` (rama a probar). Render lee `render.yaml`: crea la base PostgreSQL y el servicio web.
+3. Llenar `DJANGO_SUPERUSER_USERNAME`, `DJANGO_SUPERUSER_PASSWORD` y `NEGOCIO_NOMBRE`, y aplicar. `build.sh` instala, migra y crea el administrador la primera vez.
+4. Abrir la dirección que da Render, entrar, y en Administración › Partidas de lista de proveedor › "Importar lista (Excel)" subir los archivos de MORSA.
+
+En el plan gratis el servicio se duerme tras 15 minutos sin uso (tarda cerca de un minuto en despertar) y la base gratuita vence a los 30 días; para operar se pasa a los planes de pago (~20-25 USD/mes).
+
 ## Listas de precios de proveedor
 
 ```bash
 python manage.py importar_lista_proveedor MORSA "ruta/a/la/carpeta" --fecha 2026-11-13
 ```
 
-Carga cada fila como partida del proveedor (código, tipo, marca, aplicación, costo sin IVA, equivalencia). No crea productos: desde el admin, en "Partidas de lista de proveedor", se buscan por código, equivalencia o aplicación (ej. `tsuru 1.6`) y la acción "Agregar a mi catálogo" las da de alta como producto con su costo de proveedor. Volver a importar actualiza costos sin duplicar.
+También desde el admin con "Importar lista (Excel)", subiendo uno o varios archivos. Carga cada fila como partida del proveedor (código, tipo, marca, aplicación, costo sin IVA, equivalencia). No crea productos: desde el admin, en "Partidas de lista de proveedor", se buscan por código, equivalencia o aplicación (ej. `tsuru 1.6`) y la acción "Agregar a mi catálogo" las da de alta como producto con su costo de proveedor. Volver a importar actualiza costos sin duplicar.
 
 ### Vehículos por año
 
