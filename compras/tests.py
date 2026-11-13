@@ -90,6 +90,9 @@ class InterpretarAplicacionTests(TestCase):
         self.assertEqual(v("TOYOTA. LAND CRUISER V8 4.7 (98-07)")[0][:2], ("Toyota", "Land Cruiser"))
         self.assertEqual(v("CHEV. CHEVY L4 1.6L 1994-2012")[0][:2], ("Chevrolet", "Chevy"))
         self.assertEqual(v("CAJA AIRE AUX NISSAN TSURU III L4 1.6 (93-17)")[0][:2], ("Nissan", "Tsuru III"))
+        # Gonher GP-37: "DATSUN SEDAN" a media lista de Nissan no debe cambiar la armadora del Tsuru
+        self.assertEqual([x[:2] for x in v("NISSAN 240SX L4 2.4 (89-98) - DATSUN SEDAN L4 1.6 (82-84) - TSURU L4 1.6 (90-04)")],
+                         [("Nissan", "240SX"), ("Nissan", "Sedan"), ("Nissan", "Tsuru")])
 
     def test_sin_vehiculo(self):
         self.assertEqual(v("FILTRO PARA AIRE"), [])

@@ -24,7 +24,8 @@ ARMADORAS = {
     "GEO": "Geo", "SATURN": "Saturn", "MERCEDEZ": "Mercedes-Benz", "CR": "Chrysler", "HYUN": "Hyundai",
     "FD": "Ford", "SUZ": "Suzuki", "SUZIKI": "Suzuki", "MITSUB": "Mitsubishi", "TOTOYA": "Toyota",
     "INTINITI": "Infiniti", "SMART": "Smart", "CY": "Chirey", "ALFA": "Alfa Romeo",
-    "MB": "Mercedes-Benz", "MITSU": "Mitsubishi", "DATSUN": "Datsun",
+    "MB": "Mercedes-Benz", "MITSU": "Mitsubishi",
+    "DATSUN": "Nissan",  # en las listas "DATSUN SEDAN" va dentro de Nissan; si fuera armadora aparte se perdería el Tsuru
     "VOLVO": "Volvo", "SAAB": "Saab", "LAND": "Land Rover", "JAGUAR": "Jaguar", "CHIREY": "Chirey", "MG": "MG",
 }
 CIL = r"(?:[LV]\s?\d{1,2}|(?<![\d.])\d\s?L(?=\s)|\d\s?CIL\.?)"
