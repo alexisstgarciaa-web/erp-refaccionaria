@@ -53,7 +53,8 @@ class ImportarListaTests(TestCase):
 
 
 from catalogo.models import Aplicacion, Vehiculo  # noqa: E402
-from compras.aplicaciones import buscar, interpretar, opciones, piezas_para  # noqa: E402
+from compras.aplicaciones import buscar, coincide, interpretar, opciones, piezas_para  # noqa: E402
+from compras.models import AplicacionProveedor  # noqa: E402
 
 
 def v(texto):
@@ -128,6 +129,15 @@ class BuscarPorVehiculoTests(TestCase):
                                    "NISSAN. TSURU L4 1.6 (90-17)", 69.50, ""]])])
         self.assertEqual(buscar("tsuru").count(), antes)
         self.assertIn("GP-37", {a.partida.codigo for a in buscar("tsuru 2015")})
+
+    def test_selector_junta_variantes_de_escritura(self):
+        importar("MORSA", [lista([
+            ["F-1", "Aceite", "FILTRO", "FRAM", "NISSAN. X-TERRA V6 3.3 (00-04)", 50, ""],
+            ["F-2", "Aceite", "FILTRO", "GONHER", "NISSAN. XTERRA V6 3.3 (00-04)", 60, ""],
+        ])])
+        self.assertIn(("X-TERRA", 2), opciones(2003, "Nissan"))
+        self.assertEqual({a.partida.codigo for a in AplicacionProveedor.objects.filter(coincide(2003, "Nissan", "Xterra"))},
+                         {"F-1", "F-2"})
 
     def test_selector_del_mostrador(self):
         self.assertEqual(opciones(2003), [("Nissan", 3), ("Volkswagen", 1)])
