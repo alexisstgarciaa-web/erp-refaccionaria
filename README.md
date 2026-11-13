@@ -7,7 +7,7 @@ ERP a la medida para refaccionaria de afinación, lubricantes y químicos automo
 | Fase | Contenido | Estado |
 |---|---|---|
 | Mes 1 | Catálogo (equivalencias, aplicaciones vehiculares, kits, unidades), inventario con lote/caducidad FEFO y costo promedio, compras con recepción parcial | Modelo de datos y reglas listos |
-| Mes 2 | Punto de venta, clientes, crédito a talleres, corte de caja | Pendiente |
+| Mes 2 | Punto de venta, clientes, crédito a talleres, corte de caja | Reglas de venta listas; falta la pantalla de mostrador |
 | Mes 3 | Reportes ABC, rotación, punto de reorden, caducidades; carga de catálogo; pruebas | Pendiente |
 | Fase 2 | CFDI 4.0 vía PAC | Pendiente |
 
@@ -29,6 +29,10 @@ python manage.py importar_lista_proveedor MORSA "ruta/a/la/carpeta" --fecha 2026
 ```
 
 Carga cada fila como partida del proveedor (código, tipo, marca, aplicación, costo sin IVA, equivalencia). No crea productos: desde el admin, en "Partidas de lista de proveedor", se buscan por código, equivalencia o aplicación (ej. `tsuru 1.6`) y la acción "Agregar a mi catálogo" las da de alta como producto con su costo de proveedor. Volver a importar actualiza costos sin duplicar.
+
+## Ventas (app `ventas`)
+
+`ventas/servicios.py` concentra las reglas: `abrir_turno`, `registrar_venta` (precio según la lista del cliente, salida de inventario con conversión de unidades y FEFO, todo o nada), `cancelar_venta` (regresa al mismo lote y costo), `registrar_abono` y `cerrar_turno` (esperado contra contado por forma de pago). El crédito se valida contra días y límite del cliente. Cada producto lleva un nivel (Económico, Estándar, Premium) para ofrecerlo en mostrador.
 
 ## Reglas clave
 

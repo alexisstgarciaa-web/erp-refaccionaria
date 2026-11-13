@@ -46,6 +46,13 @@ class Producto(models.Model):
         UnidadMedida, on_delete=models.PROTECT, help_text="Unidad en que se lleva el inventario (ej. L para granel)"
     )
     codigo_barras = models.CharField(max_length=40, blank=True, db_index=True)
+    class Nivel(models.TextChoices):
+        ECONOMICO = "ECO", "Económico"
+        ESTANDAR = "STD", "Estándar"
+        PREMIUM = "PRE", "Premium"
+
+    nivel = models.CharField(max_length=3, choices=Nivel.choices, default=Nivel.ESTANDAR,
+                             help_text="Cómo se ofrece en mostrador frente a sus equivalentes")
     maneja_lote = models.BooleanField(default=False)
     maneja_caducidad = models.BooleanField(default=False, help_text="Químicos: anticongelante, líquido de frenos, aditivos")
     stock_minimo = models.DecimalField(max_digits=12, decimal_places=3, default=0)
