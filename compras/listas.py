@@ -6,8 +6,9 @@ from pathlib import Path
 
 from django.db import transaction
 
-from catalogo.models import Familia, Marca, Producto, UnidadMedida
+from catalogo.models import Aplicacion, Familia, Marca, Producto, UnidadMedida, Vehiculo
 
+from . import aplicaciones
 from .models import PartidaListaProveedor, ProductoProveedor, Proveedor
 
 ENCABEZADOS = {"código": "codigo", "codigo": "codigo", "tipo": "tipo", "descripción": "descripcion",
@@ -60,7 +61,8 @@ def importar(proveedor_nombre, rutas, fecha_lista=None):
     fecha_lista = fecha_lista or date.today()
     proveedor, _ = Proveedor.objects.get_or_create(nombre=proveedor_nombre)
     existentes = {p.codigo: p for p in PartidaListaProveedor.objects.filter(proveedor=proveedor)}
-    res = {"nuevas": 0, "actualizadas": 0, "sin_costo": 0, "costos_cambiados": 0}
+    res = {"nuevas": 0, "actualizadas": 0, "sin_costo": 0, "costos_cambiados": 0, "vehiculos": 0}
+    tocadas = set()
     nuevas = []
     for ruta in rutas:
         for reg in leer_excel(ruta):
@@ -77,6 +79,7 @@ def importar(proveedor_nombre, rutas, fecha_lista=None):
             )
             if datos["costo"] is None:
                 res["sin_costo"] += 1
+            tocadas.add(codigo)
             p = existentes.get(codigo)
             if p is None:
                 p = PartidaListaProveedor(proveedor=proveedor, codigo=codigo, **datos)
@@ -97,6 +100,9 @@ def importar(proveedor_nombre, rutas, fecha_lista=None):
             if p.producto_id and p.costo:
                 ProductoProveedor.objects.filter(proveedor=proveedor, producto_id=p.producto_id).update(costo=p.costo)
     PartidaListaProveedor.objects.bulk_create(nuevas, batch_size=500)
+    res["vehiculos"] = aplicaciones.generar(
+        PartidaListaProveedor.objects.filter(proveedor=proveedor, codigo__in=tocadas)
+    )
     return res
 
 
@@ -119,4 +125,16 @@ def agregar_a_catalogo(partida):
     )
     partida.producto = producto
     partida.save(update_fields=["producto"])
+    _copiar_vehiculos(partida, producto)
     return producto
+
+
+def _copiar_vehiculos(partida, producto):
+    """Lleva los vehículos que indica el proveedor a las aplicaciones del producto en mi catálogo,
+    para que el mostrador lo encuentre por vehículo y año."""
+    posicion = PartidaListaProveedor.Tipo(partida.tipo).label
+    for v in partida.vehiculos.all():
+        vehiculo, _ = Vehiculo.objects.get_or_create(
+            armadora=v.armadora, modelo=v.modelo, motor=v.motor, anio_desde=v.anio_desde, anio_hasta=v.anio_hasta
+        )
+        Aplicacion.objects.get_or_create(vehiculo=vehiculo, producto=producto, defaults={"posicion": posicion})

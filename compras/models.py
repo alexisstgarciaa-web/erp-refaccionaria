@@ -123,3 +123,25 @@ class PartidaListaProveedor(models.Model):
 
     def __str__(self):
         return f"{self.proveedor} · {self.codigo} ({self.marca})"
+
+
+class AplicacionProveedor(models.Model):
+    """Vehículo que el proveedor indica en el texto de aplicación de una partida, ya interpretado
+    (armadora, modelo, motor, rango de años). Se regenera cada vez que se importa la lista."""
+
+    partida = models.ForeignKey(PartidaListaProveedor, on_delete=models.CASCADE, related_name="vehiculos")
+    armadora = models.CharField(max_length=40)
+    modelo = models.CharField(max_length=60, help_text="Como viene en la lista: Tsuru III, Silverado 2500")
+    modelo_base = models.CharField(max_length=40, help_text="Para el selector: Tsuru, Silverado, Grand Caravan")
+    motor = models.CharField(max_length=40, blank=True, help_text="L4 1.6 L")
+    anio_desde = models.PositiveSmallIntegerField()
+    anio_hasta = models.PositiveSmallIntegerField()
+
+    class Meta:
+        ordering = ["armadora", "modelo_base", "anio_desde"]
+        verbose_name = "vehículo de la partida"
+        verbose_name_plural = "vehículos de la partida"
+        indexes = [models.Index(fields=["armadora", "modelo_base"]), models.Index(fields=["anio_desde", "anio_hasta"])]
+
+    def __str__(self):
+        return f"{self.armadora} {self.modelo} {self.motor} {self.anio_desde}-{self.anio_hasta}".replace("  ", " ")
