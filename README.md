@@ -7,7 +7,7 @@ ERP a la medida para refaccionaria de afinación, lubricantes y químicos automo
 | Fase | Contenido | Estado |
 |---|---|---|
 | Mes 1 | Catálogo (equivalencias, aplicaciones vehiculares, kits, unidades), inventario con lote/caducidad FEFO y costo promedio, compras con recepción parcial | Modelo de datos y reglas listos |
-| Mes 2 | Punto de venta, clientes, crédito a talleres, corte de caja | Pendiente |
+| Mes 2 | Punto de venta, clientes, crédito a talleres, corte de caja | Reglas de venta listas; falta la pantalla de mostrador |
 | Mes 3 | Reportes ABC, rotación, punto de reorden, caducidades; carga de catálogo; pruebas | Pendiente |
 | Fase 2 | CFDI 4.0 vía PAC | Pendiente |
 
@@ -39,6 +39,10 @@ En el admin, si la búsqueda trae año se busca por vehículo: `tsuru 2003`, `vw
 ```bash
 python manage.py interpretar_aplicaciones
 ```
+
+## Ventas (app `ventas`)
+
+`ventas/servicios.py` concentra las reglas: `abrir_turno`, `registrar_venta` (precio según la lista del cliente, salida de inventario con conversión de unidades y FEFO, todo o nada), `cancelar_venta` (regresa al mismo lote y costo), `registrar_abono` y `cerrar_turno` (esperado contra contado por forma de pago). El crédito se valida contra días y límite del cliente. Cada producto lleva un nivel (Económico, Estándar, Premium) para ofrecerlo en mostrador.
 
 ## Reglas clave
 
