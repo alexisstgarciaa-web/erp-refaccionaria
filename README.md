@@ -55,12 +55,12 @@ python manage.py interpretar_aplicaciones
 
 ## Mostrador
 
-`python manage.py runserver` y entrar en http://127.0.0.1:8000/ con un usuario del sistema. Es la pantalla táctil del diseño elegido:
+`python manage.py runserver` y entrar en http://127.0.0.1:8000/ con un usuario del sistema. Diseño «Pista» (`ventas/static/ventas/erp.css`):
 
-1. Se elige el vehículo por año › armadora › modelo › motor, o se escribe ("tsuru 2003", "vocho 95").
-2. Para cada pieza de la afinación (filtros de aceite, aire y gasolina, bujías, aceite de motor) salen tres tarjetas: Económico, Estándar y Premium. Primero van mis productos por su nivel; si un nivel queda vacío se llena con la lista del proveedor, repartida por tercios de costo. Cada tarjeta dice de dónde sale que le queda ("Le queda: Tsuru 1990–2004") y si hay en anaquel.
-3. Lo que no hay se agrega "sobre pedido" con precio sugerido de costo + 37% + IVA (`SOBREPRECIO_PEDIDO`).
-4. Al cobrar se registra la venta de lo que hay (necesita caja abierta) y lo sobre pedido queda en una orden de compra de emergencia en borrador para el proveedor, con el cliente y el vehículo en las notas. Lo sobre pedido no se cobra ese día. La pieza se da de alta en mi catálogo con el nivel y el precio cotizados.
+1. El vehículo se elige con cuatro listas desplegables: marca › año › modelo › motor. Cada una sale filtrada por la anterior y se llena sin recargar la página; si el modelo trae un solo motor, pasa directo a las piezas. Aparte hay un buscador libre ("tsuru 2003", "vw jetta 04 2.0", "vocho 95") y la lista de vehículos recientes.
+2. Arriba sale la afinación completa de cada nivel (Económico, Estándar, Premium), que se lleva entera al ticket con un toque. Abajo, una tarjeta por pieza (filtros de aceite, aire y gasolina, bujías, aceite de motor) con sus tres opciones. Primero van mis productos por su nivel; si un nivel queda vacío se llena con la lista del proveedor, repartida por tercios de costo. Cada opción dice de dónde sale que le queda ("Le queda: Tsuru 1990–2004") y si hay en anaquel.
+3. Lo que no hay va "sobre pedido" con precio sugerido de costo + 37% + IVA (`SOBREPRECIO_PEDIDO`).
+4. El total, la forma de pago y Cobrar van en una barra fija abajo. Al cobrar se registra la venta de lo que hay (necesita caja abierta) y lo sobre pedido queda en una orden de compra de emergencia en borrador, con el cliente y el vehículo en las notas; no se cobra ese día. La pieza se da de alta en mi catálogo con el nivel y el precio cotizados.
 5. En Caja se abre el turno con el fondo y se hace el corte contando a ciegas por forma de pago; el sistema muestra la diferencia contra lo esperado.
 
 Bujías y aceite de motor no vienen en las listas de filtros de MORSA: aparecen cuando se dan de alta en el catálogo (familias "Bujías" y "Aceites de motor") con su nivel; las bujías además con su aplicación.
