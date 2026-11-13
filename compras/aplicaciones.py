@@ -173,7 +173,7 @@ def interpretar(texto):
 # ---------------------------------------------------------------------------------------------
 
 DOS_PALABRAS = {"GRAND", "TOWN", "NEW", "TRANS", "CROWN", "EL", "PT", "SANTA", "PARK", "LAND", "MONTE",
-                "RANGE", "PICK", "SUPER", "POLICE", "GRAN", "SEA", "LE"}
+                "RANGE", "PICK", "SUPER", "POLICE", "GRAN", "SEA", "LE", "KING"}
 
 
 def modelo_base(modelo):
@@ -258,6 +258,16 @@ def piezas_para(texto):
     return {tipo: list(partidas.values()) for tipo, partidas in grupos.items()}
 
 
+def clave_modelo(modelo):
+    """X-TERRA, XTERRA y X TERRA son el mismo modelo para el selector."""
+    return re.sub(r"[^A-Z0-9]", "", (modelo or "").upper())
+
+
+def patron_modelo(modelo):
+    """Expresión que reconoce el modelo con o sin guiones/espacios, como inicio del nombre."""
+    return "^" + "[- ]?".join(map(re.escape, clave_modelo(modelo)))
+
+
 def coincide(anio, armadora=None, modelo=None, litros=None, prefijo=""):
     """Filtro Q para un vehículo elegido en el selector. Sirve para AplicacionProveedor y para
     catalogo.Vehiculo (con prefijo, ej. "aplicaciones__vehiculo__"). El modelo es el modelo base
@@ -269,7 +279,7 @@ def coincide(anio, armadora=None, modelo=None, litros=None, prefijo=""):
     if armadora:
         q &= Q(**{f("armadora"): armadora})
     if modelo:
-        q &= Q(**{f("modelo__istartswith"): modelo})
+        q &= Q(**{f("modelo__iregex"): patron_modelo(modelo)})
     if litros:
         q &= Q(**{f("motor__contains"): litros}) | Q(**{f("motor"): ""})
     return q
@@ -289,6 +299,13 @@ def opciones(anio, armadora=None, modelo=None):
             for litros in DISP_RE.findall(motor):
                 cuenta.setdefault(litros, set()).add(partida)
         return sorted(((k, len(v)) for k, v in cuenta.items()), key=lambda x: (-x[1], x[0]))
-    campo = "modelo_base" if armadora else "armadora"
-    filas = qs.values(campo).annotate(n=Count("partida", distinct=True)).order_by("-n", campo)
-    return [(f[campo], f["n"]) for f in filas]
+    if armadora:  # modelos: se juntan las variantes de escritura (X-TERRA / XTERRA) bajo la más común
+        grupos = {}
+        for base, partida in qs.values_list("modelo_base", "partida_id").distinct():
+            g = grupos.setdefault(clave_modelo(base), {"nombres": {}, "partidas": set()})
+            g["nombres"][base] = g["nombres"].get(base, 0) + 1
+            g["partidas"].add(partida)
+        res = [(max(g["nombres"], key=g["nombres"].get), len(g["partidas"])) for g in grupos.values()]
+        return sorted(res, key=lambda x: (-x[1], x[0]))
+    filas = qs.values("armadora").annotate(n=Count("partida", distinct=True)).order_by("-n", "armadora")
+    return [(f["armadora"], f["n"]) for f in filas]
