@@ -18,6 +18,7 @@ from compras.aplicaciones import buscar, clave_modelo, leer_consulta, selector
 from . import mostrador as m
 from .models import Cliente, FormaPago, Turno, Venta
 from .servicios import abrir_turno, cerrar_turno, esperado_en_caja
+from .templatetags.erp import cant, pesos
 
 
 def _volver(request, defecto="mostrador"):
@@ -125,10 +126,10 @@ def mostrador(request):
     ctx["pedido_total"] = sum((ln.importe for ln in lineas if ln.sobre_pedido), Decimal(0))
     ctx["pedido_n"] = sum(1 for ln in lineas if ln.sobre_pedido)
     ctx["pagos"] = [fp for fp in FormaPago if fp != FormaPago.CREDITO or ticket.cliente.dias_credito > 0]
-    ctx["aqui"] = _sin(request.get_full_path(), "codigo", "cantidad")
+    ctx["aqui"] = _sin(request.get_full_path(), "codigo", "cantidad", "precio")
     if g.get("codigo"):
-        texto, cant = m.leer_captura(g["codigo"], g.get("cantidad"))
-        ctx["por_codigo"] = {"texto": texto, "cantidad": cant,
+        texto, cuantas = m.leer_captura(g["codigo"], g.get("cantidad"))
+        ctx["por_codigo"] = {"texto": texto, "cantidad": cuantas, "precio": g.get("precio", ""),
                              "resultados": m.buscar_codigo(texto, ticket.cliente.lista_precio)[0]}
     ctx["enfocar_codigo"] = request.session.pop("enfocar_codigo", False) or bool(g.get("codigo"))
     folio = request.session.pop("ultima_venta", None)
@@ -184,15 +185,36 @@ def _ficha(request, ticket, veh, litros_param, pos_clave=None):
             "elegidas": len(elegidas), "sobreprecio": int(m.sobreprecio() * 100)}
 
 
+def _precio_tecleado(request, obj, texto):
+    """Precio con IVA por unidad tecleado en mostrador; vacío es el de la lista (None). Abajo del costo
+    solo lo puede dejar un administrador, y el mensaje no dice el costo."""
+    if not str(texto or "").strip():
+        return None
+    precio = _decimal(texto)
+    if precio is None or precio <= 0:
+        raise ValidationError("Escribe un precio válido, por ejemplo 125.50.")
+    precio = precio.quantize(Decimal("0.01"))
+    if m.abajo_del_costo(obj, precio):
+        if not request.user.is_staff:
+            raise ValidationError(f"{pesos(precio)} queda abajo del costo. Solo un administrador puede dejarlo a ese precio.")
+        messages.warning(request, f"Ojo: {pesos(precio)} queda abajo del costo.")
+    return precio
+
+
 @login_required
 @require_POST
 def agregar(request):
     ticket = m.Ticket(request.session)
     try:
-        ticket.agregar(request.POST["clave"], request.POST.get("pos"), cantidad=_decimal(request.POST.get("cantidad")),
-                       nivel=request.POST.get("nivel", ""))
-    except (KeyError, ValidationError, ObjectDoesNotExist):
+        clave = request.POST["clave"]
+        precio = _precio_tecleado(request, m.resolver(clave), request.POST.get("precio"))
+        ticket.agregar(clave, request.POST.get("pos"), cantidad=_decimal(request.POST.get("cantidad")),
+                       nivel=request.POST.get("nivel", ""), precio=precio)
+    except (KeyError, ObjectDoesNotExist):
         messages.error(request, "Esa opción ya no existe; vuelve a elegir.")
+        return _volver(request)
+    except ValidationError as e:
+        messages.error(request, " ".join(e.messages))
         return _volver(request)
     if not request.POST.get("pos"):
         request.session["enfocar_codigo"] = True  # listo para el siguiente código
@@ -205,15 +227,30 @@ def agregar_codigo(request):
     """Código tecleado o escaneado. Si es de una sola pieza entra directo al ticket; si no, se muestran
     las coincidencias para elegir."""
     texto, cantidad = m.leer_captura(request.POST.get("codigo", ""), request.POST.get("cantidad"))
-    if not texto:
-        return _volver(request)
     ticket = m.Ticket(request.session)
-    encontrados, directo = m.buscar_codigo(texto, ticket.cliente.lista_precio)
+    lista = ticket.cliente.lista_precio
     request.session["enfocar_codigo"] = True
+    encontrados = None
+    if request.POST.get("clave"):  # eligió una de las sugerencias: ya se sabe cuál es
+        try:
+            encontrados, directo = [m.encontrado(m.resolver(request.POST["clave"]), lista)], True
+        except (ValidationError, ObjectDoesNotExist):
+            encontrados = None
+    if encontrados is None:
+        if not texto:
+            return _volver(request)
+        encontrados, directo = m.buscar_codigo(texto, lista)
+    precio_txt = request.POST.get("precio", "").strip()
     if directo:
         op = encontrados[0].opcion
-        ticket.agregar(op.clave, None, cantidad=cantidad)
-        messages.success(request, f"{op.codigo} {op.marca} × {cantidad.normalize():f} al ticket."
+        try:
+            precio = _precio_tecleado(request, m.resolver(op.clave), precio_txt)
+        except ValidationError as e:
+            messages.error(request, " ".join(e.messages))
+            return _volver(request)
+        ticket.agregar(op.clave, None, cantidad=cantidad, precio=precio)
+        messages.success(request, f"{op.codigo} {op.marca} × {cant(cantidad)} al ticket"
+                         + (f" a {pesos(precio)} c/u" if precio is not None and precio != op.precio else "") + "."
                          + (" Va sobre pedido." if op.existencia is None or op.existencia < cantidad else ""))
         return _volver(request)
     if not encontrados:
@@ -222,7 +259,21 @@ def agregar_codigo(request):
     destino = request.POST.get("next") or ""
     if not url_has_allowed_host_and_scheme(destino, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
         destino = reverse("mostrador")
-    return redirect(_con(destino, codigo=texto, cantidad=f"{cantidad.normalize():f}"))
+    extra = {"precio": precio_txt} if precio_txt else {}
+    return redirect(_con(destino, codigo=texto, cantidad=f"{cantidad.normalize():f}", **extra))
+
+
+@login_required
+def sugerir(request):
+    """Sugerencias para el campo de código mientras se teclea."""
+    res = m.sugerir(request.GET.get("q", ""), m.Ticket(request.session).cliente.lista_precio)
+    return JsonResponse({"q": request.GET.get("q", ""), "sugerencias": [{
+        "clave": e.opcion.clave, "codigo": e.opcion.codigo, "marca": e.opcion.marca,
+        "nombre": e.nombre[:70], "equivalente": e.por_equivalencia,
+        "hay": not e.opcion.sobre_pedido, "existencia": cant(e.opcion.existencia) if e.opcion.existencia else "",
+        "precio": cant(e.opcion.precio).replace(",", "") if e.opcion.precio is not None else "",
+        "precio_txt": pesos(e.opcion.precio) or "sin precio",
+    } for e in res]})
 
 
 @login_required
@@ -259,6 +310,22 @@ def cantidad(request, i):
     c = _decimal(request.POST.get("cantidad"))
     if c is not None:
         m.Ticket(request.session).cambiar_cantidad(i, c)
+    return _volver(request)
+
+
+@login_required
+@require_POST
+def precio(request, i):
+    """Precio con IVA de un renglón del ticket; vacío lo regresa al de la lista."""
+    ticket = m.Ticket(request.session)
+    clave = ticket.clave_de(i)
+    if clave:
+        try:
+            ticket.cambiar_precio(i, _precio_tecleado(request, m.resolver(clave), request.POST.get("precio")))
+        except ValidationError as e:
+            messages.error(request, " ".join(e.messages))
+        except ObjectDoesNotExist:
+            pass
     return _volver(request)
 
 

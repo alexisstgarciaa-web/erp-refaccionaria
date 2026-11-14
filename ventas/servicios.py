@@ -38,7 +38,8 @@ def abrir_turno(usuario, fondo_inicial=0):
 
 @transaction.atomic
 def registrar_venta(turno, cliente, partidas, forma_pago, usuario=None):
-    """partidas: [{producto, cantidad, unidad?}]. El precio sale de la lista del cliente.
+    """partidas: [{producto, cantidad, unidad?, precio?}]. El precio sale de la lista del cliente, salvo que
+    la partida traiga uno (con IVA) tecleado en mostrador.
     Todo o nada: si una pieza no tiene existencia o precio, no se registra nada."""
     if turno.cerrado:
         raise ValidationError("El turno está cerrado.")
@@ -59,7 +60,12 @@ def registrar_venta(turno, cliente, partidas, forma_pago, usuario=None):
         unidad = pt.get("unidad") or producto.unidad_base
         if not unidad.permite_fraccion and cantidad != cantidad.to_integral_value():
             raise ValidationError(f"{producto.sku} se vende por {unidad} completa.")
-        precio = precio_de(producto, cliente.lista_precio, unidad)
+        if pt.get("precio") is not None:
+            precio = Decimal(str(pt["precio"]))
+            if precio <= 0:
+                raise ValidationError(f"Precio inválido para {producto.sku}.")
+        else:
+            precio = precio_de(producto, cliente.lista_precio, unidad)
         factor = producto.factor_a_base(unidad)
         movs = registrar_salida(producto, cantidad * factor, Movimiento.Tipo.SALIDA_VENTA,
                                 referencia=venta.folio, usuario=venta.usuario)

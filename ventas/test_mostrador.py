@@ -179,6 +179,59 @@ class MostradorTests(TestCase):
         self.assertContains(r, "No encontré «ZZZ-999»")
         self.assertEqual(len(self.client.session["ticket"]["lineas"]), 2)
 
+    def test_sugerencias_mientras_se_teclea(self):
+        url = reverse("ticket_sugerir")
+        d = self.client.get(url, {"q": "ph9"}).json()["sugerencias"]
+        self.assertEqual(d[0]["codigo"], "PH966B")  # mi producto, con existencia y precio de lista
+        self.assertEqual((d[0]["clave"], d[0]["hay"], d[0]["precio"], d[0]["precio_txt"]),
+                         (f"producto:{self.fram.pk}", True, "98", "$98"))
+        d = self.client.get(url, {"q": "gp 3"}).json()["sugerencias"]  # sin guion y con espacio
+        self.assertEqual([s["codigo"] for s in d], ["GP-37"])
+        self.assertFalse(d[0]["hay"])
+        # contiene, no solo empieza con: «6900» encuentra CA6900
+        self.assertIn("CA6900", [s["codigo"] for s in self.client.get(url, {"q": "6900"}).json()["sugerencias"]])
+        # por descripción y aplicación
+        d = self.client.get(url, {"q": "filtro aire"}).json()["sugerencias"]
+        self.assertEqual([s["codigo"] for s in d], ["CA6900"])
+        self.assertEqual(self.client.get(url, {"q": "p"}).json()["sugerencias"], [])  # muy corto
+
+    def test_cantidad_y_precio_tecleados(self):
+        url = reverse("ticket_codigo")
+        # eligió la sugerencia: viene la clave, con su cantidad y un precio con IVA distinto al de lista
+        self.client.post(url, {"codigo": "PH966B", "clave": f"producto:{self.fram.pk}", "cantidad": "2",
+                               "precio": "$120"})
+        self.assertEqual(self.client.session["ticket"]["lineas"],
+                         [{"clave": f"producto:{self.fram.pk}", "pos": "", "cantidad": "2", "nivel": "", "precio": "120.00"}])
+        r = self.client.get(reverse("mostrador"))
+        self.assertContains(r, "precio especial")
+        self.assertEqual(r.context["total"], D("240"))
+        # abajo del costo (52.43 sin IVA) no lo deja quien atiende el mostrador, y no dice el costo
+        r = self.client.post(url, {"codigo": "GP-37", "precio": "50"}, follow=True)
+        self.assertContains(r, "queda abajo del costo")
+        self.assertNotContains(r, "66.17")
+        self.assertEqual(len(self.client.session["ticket"]["lineas"]), 1)
+        # cambiar el precio desde el renglón del ticket; vacío regresa al de la lista
+        self.client.post(reverse("ticket_precio", args=[0]), {"precio": "110"})
+        self.assertEqual(self.client.session["ticket"]["lineas"][0]["precio"], "110.00")
+        self.client.post(reverse("ticket_precio", args=[0]), {"precio": "40"})  # abajo del costo: se queda en 110
+        self.assertEqual(self.client.session["ticket"]["lineas"][0]["precio"], "110.00")
+        # un administrador sí puede, con aviso
+        self.user.is_staff = True
+        self.user.save()
+        r = self.client.post(reverse("ticket_precio", args=[0]), {"precio": "55"}, follow=True)
+        self.assertContains(r, "Ojo: $55 queda abajo del costo")
+        self.client.post(reverse("ticket_precio", args=[0]), {"precio": ""})
+        self.assertNotIn("precio", self.client.session["ticket"]["lineas"][0])
+        # al cobrar se respeta el precio tecleado, también en lo que queda sobre pedido
+        self.client.post(reverse("ticket_precio", args=[0]), {"precio": "115.50"})
+        self.client.post(url, {"codigo": "GP-37", "cantidad": "1", "precio": "130"})
+        self.client.post(reverse("caja"), {"accion": "abrir", "fondo": "500"})
+        self.client.post(reverse("ticket_cobrar"), {"forma_pago": "EFECTIVO"})
+        venta = Venta.objects.get()
+        self.assertEqual(venta.lineas.get().precio_unitario, D("115.50"))
+        self.assertEqual(venta.total, D("231.00"))
+        self.assertEqual((venta.pedido[0]["codigo"], venta.pedido[0]["precio"]), ("GP-37", "130.00"))
+
     def test_leer_captura(self):
         self.assertEqual(m.leer_captura("4*PH966B"), ("PH966B", D("4")))
         self.assertEqual(m.leer_captura("3 x GP-37"), ("GP-37", D("3")))

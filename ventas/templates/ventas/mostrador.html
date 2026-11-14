@@ -58,16 +58,27 @@
   {% endif %}
 </section>
 
-<form class="captura" method="post" action="{% url 'ticket_codigo' %}" aria-label="Agregar por código">{% csrf_token %}
+<form class="captura" method="post" action="{% url 'ticket_codigo' %}" aria-label="Agregar por código"
+      data-sugerir="{% url 'ticket_sugerir' %}">{% csrf_token %}
   <input type="hidden" name="next" value="{{ aqui }}">
-  <label class="captura-codigo">
-    <span>Código, SKU o código de barras</span>
+  <input type="hidden" name="clave" id="codigo-clave">
+  <div class="captura-codigo">
+    <label for="codigo">Código o descripción</label>
     <input name="codigo" id="codigo" autocomplete="off" autocapitalize="characters" spellcheck="false"
-           placeholder="Escanea o teclea: PH966B, 4*GP-37, anticongelante"{% if enfocar_codigo %} autofocus{% endif %}>
-  </label>
-  <label class="captura-cantidad"><span>Cant.</span><input name="cantidad" inputmode="decimal" value="1" aria-label="Cantidad"></label>
+           role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sugerencias"
+           placeholder="Escanea o teclea: PH966B, GP-37, filtro aire jetta"{% if enfocar_codigo %} autofocus{% endif %}>
+    <div class="sugerencias" id="sugerencias" role="listbox" aria-label="Sugerencias" hidden></div>
+  </div>
+  <div class="captura-cantidad">
+    <label for="captura-cantidad">Cantidad</label>
+    <input name="cantidad" id="captura-cantidad" inputmode="decimal" value="1" autocomplete="off">
+  </div>
+  <div class="captura-precio">
+    <label for="captura-precio">Precio c/u con IVA</label>
+    <span class="con-signo"><input name="precio" id="captura-precio" inputmode="decimal" placeholder="De lista" autocomplete="off"></span>
+  </div>
   <button class="btn-primario" type="submit">Agregar</button>
-  <p class="captura-ayuda">Enter agrega al ticket · <b>F2</b> regresa aquí · también busca equivalencias y por nombre</p>
+  <p class="captura-ayuda">Escribe y elige con <b>↑ ↓</b> y <b>Enter</b> · escaneado entra directo · <b>F2</b> regresa aquí · precio vacío = el de la lista</p>
 </form>
 
 {% if ultima_venta %}
@@ -95,6 +106,7 @@
       {% for e in por_codigo.resultados %}
       <form method="post" action="{% url 'ticket_agregar' %}">{% csrf_token %}
         <input type="hidden" name="clave" value="{{ e.opcion.clave }}"><input type="hidden" name="cantidad" value="{{ por_codigo.cantidad }}">
+        {% if por_codigo.precio %}<input type="hidden" name="precio" value="{{ por_codigo.precio }}">{% endif %}
         <input type="hidden" name="next" value="{{ aqui }}">
         <button type="submit"{% if e.opcion.precio is None %} disabled{% endif %}>
           <span class="opcion-codigo">{{ e.opcion.codigo }}</span>
@@ -107,7 +119,7 @@
       <p class="nota" style="margin: 0">Revisa el código, prueba con parte del nombre («anticong», «5w30») o búscalo por vehículo arriba.</p>
       {% endfor %}
     </div>
-    {% if por_codigo.resultados %}<p class="nota">Se agrega{{ por_codigo.cantidad|pluralize:",n" }} {{ por_codigo.cantidad|cant }} al ticket.</p>{% endif %}
+    {% if por_codigo.resultados %}<p class="nota">Se agrega{{ por_codigo.cantidad|pluralize:",n" }} {{ por_codigo.cantidad|cant }} al ticket{% if por_codigo.precio %} a ${{ por_codigo.precio }} c/u{% endif %}.</p>{% endif %}
   </section>
 {% endif %}
 

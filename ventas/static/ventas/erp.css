@@ -244,6 +244,8 @@ option, optgroup { background: var(--fondo); color: var(--texto); }
 .renglon-acciones form { margin: 0; }
 .renglon-acciones label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--texto-3); }
 .renglon-acciones input { width: 72px; height: 38px; font-size: 15px; }
+.renglon-acciones input.renglon-precio { width: 84px; text-align: right; }
+.renglon-detalle .especial { color: var(--primario); font-weight: 700; }
 .quitar { all: unset; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--rojo); }
 
 /* ───────── Barra de cobro fija abajo ───────── */
@@ -296,13 +298,32 @@ option, optgroup { background: var(--fondo); color: var(--texto); }
 body.con-cobro .pie-sitio { display: none; }
 
 /* ───────── Captura por código ───────── */
-.captura { margin-top: 14px; padding: 14px 22px; display: grid; grid-template-columns: minmax(0, 1fr) 110px auto; gap: 6px 12px; align-items: end;
+.captura { margin-top: 14px; padding: 14px 22px; display: grid; grid-template-columns: minmax(0, 1fr) 110px 160px auto; gap: 6px 12px; align-items: end;
   background: var(--barra-fondo); color: var(--barra-texto); }
-.captura span { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--barra-texto-2); }
+.captura label { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--barra-texto-2); white-space: nowrap; }
 .captura input { background: #1C1D20; border-color: #34353A; color: #fff; }
+.captura input::placeholder { text-transform: none; font: 400 15px var(--f-texto); color: #8A8A84; }
+.captura-codigo { position: relative; }
 .captura-codigo input { font: 600 20px var(--f-mono); letter-spacing: .02em; text-transform: uppercase; }
-.captura-codigo input::placeholder { text-transform: none; font: 400 15px var(--f-texto); color: #8A8A84; }
 .captura-cantidad input { text-align: center; font: 600 18px var(--f-mono); }
+.captura-precio input { text-align: right; font: 600 18px var(--f-mono); padding-left: 30px; }
+.con-signo { position: relative; display: block; }
+.con-signo::before { content: "$"; position: absolute; left: 13px; top: 50%; transform: translateY(-50%); font: 600 18px var(--f-mono); color: #8A8A84; pointer-events: none; }
+
+/* Sugerencias mientras se teclea el código */
+.sugerencias { position: absolute; left: 0; right: 0; top: 100%; z-index: 40; margin-top: 4px; max-height: min(440px, 60vh); overflow-y: auto;
+  background: var(--superficie); color: var(--texto); border-top: 4px solid var(--primario); box-shadow: 0 22px 48px rgba(0, 0, 0, .32); }
+.sugerencia { display: grid; grid-template-columns: minmax(120px, auto) minmax(0, 1fr) auto 84px; gap: 14px; align-items: center;
+  padding: 10px 14px; border-left: 4px solid transparent; border-bottom: 1px solid var(--borde-2); cursor: pointer; }
+.sugerencia:last-child { border-bottom: 0; }
+.sugerencia[aria-selected="true"], .sugerencia:hover { background: #FFF6F5; border-left-color: var(--primario); }
+.sugerencia .opcion-codigo { font-size: 15px; white-space: nowrap; }
+.sugerencia .opcion-codigo mark { background: var(--primario-suave); color: inherit; }
+.sugerencia-nombre { font-size: 13px; color: var(--texto-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sugerencia-nombre b { color: var(--texto); }
+.sugerencia-nombre i { font-size: 11px; font-weight: 700; font-style: normal; text-transform: uppercase; color: var(--primario); }
+.sugerencia .opcion-precio { font-size: 17px; text-align: right; }
+.sugerencias-nota { padding: 9px 14px; font-size: 12px; color: var(--texto-3); background: var(--superficie-2); }
 .captura-ayuda { grid-column: 1 / -1; margin: 2px 0 0; font-size: 12px; color: var(--barra-texto-2); }
 .captura-ayuda b { color: #fff; }
 
@@ -466,8 +487,11 @@ body.doc { background: #D9D9D4; padding-bottom: 40px; }
   .vehiculo-panel { padding: 16px; }
   .selector { grid-template-columns: 1fr 1fr; }
   .selector .btn-primario { grid-column: 1 / -1; }
-  .captura { grid-template-columns: 1fr 80px; padding: 14px 16px; }
-  .captura .btn-primario { grid-column: 1 / -1; }
+  .captura { grid-template-columns: 1fr 1fr; padding: 14px 16px; }
+  .captura-codigo, .captura .btn-primario { grid-column: 1 / -1; }
+  .sugerencia { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; }
+  .sugerencia-nombre { grid-column: 1 / -1; grid-row: 2; }
+  .sugerencia .estado { display: none; }
   .por-codigo-lista button { grid-template-columns: 1fr auto; gap: 4px 10px; }
   .por-codigo-nombre { grid-column: 1 / -1; grid-row: 2; }
   .rem-datos, .rem-firmas { grid-template-columns: 1fr; }
