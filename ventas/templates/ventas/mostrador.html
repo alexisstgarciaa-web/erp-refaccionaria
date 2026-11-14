@@ -20,21 +20,21 @@
     </label>
     <label class="lista">
       <span>Año</span>
-      <select name="anio"{% if not listas.anios %} disabled{% endif %}{% if paso == 'anio' %} autofocus{% endif %}>
+      <select name="anio"{% if not listas.anios %} disabled{% endif %}{% if paso == 'anio' and not enfocar_codigo %} autofocus{% endif %}>
         <option value="">Año</option>
         {% for a in listas.anios %}<option value="{{ a }}"{% if a == sel.anio %} selected{% endif %}>{{ a }}</option>{% endfor %}
       </select>
     </label>
     <label class="lista">
       <span>Modelo</span>
-      <select name="modelo"{% if not listas.modelos %} disabled{% endif %}{% if paso == 'modelo' %} autofocus{% endif %}>
+      <select name="modelo"{% if not listas.modelos %} disabled{% endif %}{% if paso == 'modelo' and not enfocar_codigo %} autofocus{% endif %}>
         <option value="">Modelo</option>
         {% for v, n in listas.modelos %}<option value="{{ v }}"{% if v == sel.modelo %} selected{% endif %}>{{ v }}</option>{% endfor %}
       </select>
     </label>
     <label class="lista">
       <span>Motor</span>
-      <select name="litros"{% if not sel.modelo %} disabled{% endif %}{% if paso == 'motor' %} autofocus{% endif %}>
+      <select name="litros"{% if not sel.modelo %} disabled{% endif %}{% if paso == 'motor' and not enfocar_codigo %} autofocus{% endif %}>
         <option value="">Motor</option>
         {% for v, n in listas.motores %}<option value="{{ v }}"{% if v == sel.litros %} selected{% endif %}>{{ v }} L</option>{% endfor %}
         {% if sel.modelo %}<option value="todos"{% if sel.litros == 'todos' %} selected{% endif %}>Todos los motores</option>{% endif %}
@@ -46,26 +46,100 @@
   <form class="buscador" method="get" action="{% url 'mostrador' %}" role="search">
     <label for="q">O escríbelo</label>
     <div class="buscador-campo">
-      <input id="q" name="q" placeholder="Ej. tsuru 2003" autocomplete="off"{% if paso == 'marca' %} autofocus{% endif %}>
+      <input id="q" name="q" placeholder="Ej. tsuru 2003" autocomplete="off"{% if paso == 'marca' and not enfocar_codigo %} autofocus{% endif %}>
       <button type="submit">Buscar</button>
     </div>
   </form>
 
-  {% if recientes %}
-  <div class="recientes"><span>Recientes</span>
-    {% for r in recientes %}<a class="chip" href="{{ r.url }}">{{ r.armadora }} {{ r.modelo }} {{ r.anio }}{% if r.litros and r.litros != 'todos' %} · {{ r.litros }} L{% endif %}</a>{% endfor %}
+  {% if recientes or sel.armadora %}
+  <div class="recientes">
+    {% if recientes %}<span>Recientes</span>
+    {% for r in recientes %}<a class="chip" href="{{ r.url }}">{{ r.armadora }} {{ r.modelo }} {{ r.anio }}{% if r.litros and r.litros != 'todos' %} · {{ r.litros }} L{% endif %}</a>{% endfor %}{% endif %}
+    {% if sel.armadora %}<a class="limpiar" href="{% url 'mostrador' %}" title="Borra marca, año, modelo y motor para elegir otro vehículo. El ticket se queda.">✕ Limpiar vehículo</a>{% endif %}
   </div>
   {% endif %}
 </section>
 
-<div class="mesa">
+<form class="captura" method="post" action="{% url 'ticket_codigo' %}" aria-label="Agregar por código"
+      data-sugerir="{% url 'ticket_sugerir' %}">{% csrf_token %}
+  <input type="hidden" name="next" value="{{ aqui }}">
+  <input type="hidden" name="clave" id="codigo-clave">
+  <div class="captura-codigo">
+    <label for="codigo">Código o descripción</label>
+    <input name="codigo" id="codigo" autocomplete="off" autocapitalize="characters" spellcheck="false"
+           role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sugerencias"
+           placeholder="Escanea o teclea: PH966B, GP-37, filtro aire jetta"{% if enfocar_codigo %} autofocus{% endif %}>
+    <div class="sugerencias" id="sugerencias" role="listbox" aria-label="Sugerencias" hidden></div>
+  </div>
+  <div class="captura-cantidad">
+    <label for="captura-cantidad">Cantidad</label>
+    <input name="cantidad" id="captura-cantidad" inputmode="decimal" value="1" autocomplete="off">
+  </div>
+  <div class="captura-precio">
+    <label for="captura-precio">Precio c/u con IVA</label>
+    <span class="con-signo"><input name="precio" id="captura-precio" inputmode="decimal" placeholder="De lista" autocomplete="off"></span>
+  </div>
+  <button class="btn-primario" type="submit">Agregar</button>
+  {% if agregado %}
+  <p class="captura-hecho" role="status">
+    <b class="captura-hecho-ok">Agregado</b>
+    <span class="captura-hecho-pieza"><b>{{ agregado.codigo }}</b> {{ agregado.marca }} · {{ agregado.nombre }}</span>
+    <span class="captura-hecho-cuenta">{% if agregado.sumado %}+{{ agregado.agregada }}, ya van {% endif %}{{ agregado.cantidad }} × {{ agregado.precio }}{% if agregado.especial %} <i>especial</i>{% endif %} = <b>{{ agregado.importe }}</b></span>
+    {% if agregado.pedido %}<span class="estado pedido">Sobre pedido</span>{% endif %}
+  </p>
+  {% endif %}
+  <p class="captura-ayuda"><b>Enter</b> avanza: código › cantidad › precio › agrega · <b>↑ ↓</b> eligen sugerencia · <b>F2</b> regresa aquí · <b>Esc</b> cierra</p>
+</form>
+
+{% if ultima_venta %}
+<section class="recien" aria-label="Venta registrada">
+  <div>
+    <span class="recien-etiqueta">Venta registrada</span>
+    <b>{{ ultima_venta.folio }} · {{ ultima_venta.total|pesos }} · {{ ultima_venta.get_forma_pago_display }}</b>
+    <span>{{ ultima_venta.cliente }}{% if ultima_venta.vehiculo %} · {{ ultima_venta.vehiculo }}{% endif %}</span>
+  </div>
+  <a class="btn-primario" href="{% url 'remision' ultima_venta.folio %}?imprimir=1" target="_blank" rel="noopener">Imprimir remisión</a>
+  <a class="btn-sec" href="{% url 'remision' ultima_venta.folio %}?formato=ticket&amp;imprimir=1" target="_blank" rel="noopener">Ticket 80 mm</a>
+</section>
+{% endif %}
+
+{# Sin vehículo elegido, el ticket ocupa todo el ancho; con vehículo, la hoja de piezas va a un lado #}
+<div class="mesa{% if paso != 'ficha' and not por_codigo %} sin-ficha{% endif %}">
+{% if paso == 'ficha' or por_codigo %}
 <section class="centro ficha">
+
+{% if por_codigo %}
+  <section class="panel por-codigo" aria-label="Resultados por código">
+    <header>
+      <h2>{% if por_codigo.resultados %}Elige: «{{ por_codigo.texto }}»{% else %}Sin resultados para «{{ por_codigo.texto }}»{% endif %}</h2>
+      <a href="{{ aqui }}">Cerrar</a>
+    </header>
+    <div class="por-codigo-lista">
+      {% for e in por_codigo.resultados %}
+      <form method="post" action="{% url 'ticket_agregar' %}">{% csrf_token %}
+        <input type="hidden" name="clave" value="{{ e.opcion.clave }}"><input type="hidden" name="cantidad" value="{{ por_codigo.cantidad }}">
+        {% if por_codigo.precio %}<input type="hidden" name="precio" value="{{ por_codigo.precio }}">{% endif %}
+        <input type="hidden" name="next" value="{{ aqui }}">
+        <button type="submit"{% if e.opcion.precio is None %} disabled{% endif %}>
+          <span class="opcion-codigo">{{ e.opcion.codigo }}</span>
+          <span class="por-codigo-nombre"><b>{{ e.opcion.marca }}</b> {{ e.nombre }}{% if e.por_equivalencia %} <i>equivalente</i>{% endif %}</span>
+          {% if e.opcion.sobre_pedido %}<span class="estado pedido">Pedido</span>{% else %}<span class="estado hay">Hay {{ e.opcion.existencia|cant }}</span>{% endif %}
+          <span class="opcion-precio">{{ e.opcion.precio|pesos|default:"sin precio" }}</span>
+        </button>
+      </form>
+      {% empty %}
+      <p class="nota" style="margin: 0">Revisa el código, prueba con parte del nombre («anticong», «5w30») o búscalo por vehículo arriba.</p>
+      {% endfor %}
+    </div>
+    {% if por_codigo.resultados %}<p class="nota">Se agrega{{ por_codigo.cantidad|pluralize:",n" }} {{ por_codigo.cantidad|cant }} al ticket{% if por_codigo.precio %} a ${{ por_codigo.precio }} c/u{% endif %}.</p>{% endif %}
+  </section>
+{% endif %}
 
 {% if paso == 'ficha' %}
   <header class="vehiculo-titulo">
     <p class="antetitulo">Afinación para</p>
     <h1>{{ veh.armadora }} {{ veh.modelo }} <span>{{ veh.anio }}</span></h1>
-    <p class="detalle">{% if veh.litros %}Motor {{ veh.litros }} L{% else %}Todos los motores{% endif %} · primero tus productos, luego la lista del proveedor</p>
+    <p class="detalle">{% if veh.litros %}Motor {{ veh.litros }} L{% else %}Todos los motores{% endif %} · primero tus productos, luego la lista del proveedor · <a href="{% url 'mostrador' %}">Cambiar vehículo</a></p>
   </header>
 
   <section class="paquetes" aria-label="Afinación completa por nivel">
@@ -141,22 +215,10 @@
   {% endfor %}
   <p class="nota">Toca una opción para llevarla al ticket. Tus productos van primero según su nivel; donde no tienes, se llena con la lista del proveedor, de la más barata (Económico) a la más cara (Premium). Lo que va <b>sobre pedido</b> se cotiza a costo + {{ sobreprecio }}% + IVA y se cobra al entregar.</p>
 
-{% else %}
-  <div class="guia">
-    <ol class="pasos" aria-label="Pasos">
-      {% for clave, nombre in "marca:Marca,anio:Año,modelo:Modelo,motor:Motor"|pasos:paso %}<li class="{{ clave }}">{{ nombre }}</li>{% endfor %}
-    </ol>
-    <h1>
-      {% if paso == 'marca' %}¿Qué vehículo trae el cliente?
-      {% elif paso == 'anio' %}{{ sel.armadora }}: ¿de qué año?
-      {% elif paso == 'modelo' %}{{ sel.armadora }} {{ sel.anio }}: ¿qué modelo?
-      {% else %}{{ sel.armadora }} {{ sel.modelo }} {{ sel.anio }}: ¿qué motor trae?{% endif %}
-    </h1>
-    <p>{% if paso == 'motor' %}Si el cliente no sabe, elige «Todos los motores» y salen las piezas de cada uno.{% else %}Elige en las listas de arriba o escribe el vehículo en el buscador, por ejemplo «tsuru 2003».{% endif %}</p>
-  </div>
 {% endif %}
 
 </section>
+{% endif %}
 {% include "ventas/_ticket.html" %}
 </div>
 {% endblock %}

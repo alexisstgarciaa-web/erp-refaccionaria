@@ -74,6 +74,9 @@ class Venta(models.Model):
     saldo = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text="Pendiente de cobro si es a crédito")
     vence = models.DateField(null=True, blank=True)
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT)
+    vehiculo = models.CharField(max_length=120, blank=True, help_text="Vehículo atendido en mostrador, para la remisión")
+    pedido = models.JSONField(default=list, blank=True,
+                              help_text="Lo que quedó sobre pedido: [{codigo, descripcion, cantidad, precio, importe}]")
 
     class Meta:
         ordering = ["-fecha"]

@@ -20,6 +20,7 @@
     {% url 'mostrador' as u_mostrador %}{% url 'caja' as u_caja %}
     <a href="{{ u_mostrador }}"{% if request.path == u_mostrador %} aria-current="page"{% endif %}>Mostrador</a>
     <a href="{{ u_caja }}"{% if request.path == u_caja %} aria-current="page"{% endif %}>Caja</a>
+    {% url 'remisiones' as u_remisiones %}<a href="{{ u_remisiones }}"{% if request.path == u_remisiones %} aria-current="page"{% endif %}>Remisiones</a>
     {% if user.is_staff %}<a href="{% url 'admin:index' %}">Administración</a>{% endif %}
   </nav>
   <div class="usuario">

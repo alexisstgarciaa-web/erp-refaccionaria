@@ -51,7 +51,7 @@
     <thead><tr><th>Folio</th><th>Cliente</th><th>Pago</th><th>Estado</th><th class="num">Total</th></tr></thead>
     <tbody>
       {% for v in ventas %}
-      <tr><td>{{ v.folio }}</td><td>{{ v.cliente }}</td><td>{{ v.get_forma_pago_display }}</td><td>{{ v.get_estado_display }}</td><td class="num">{{ v.total|pesos }}</td></tr>
+      <tr><td><a href="{% url 'remision' v.folio %}" target="_blank" rel="noopener">{{ v.folio }}</a></td><td>{{ v.cliente }}</td><td>{{ v.get_forma_pago_display }}</td><td>{{ v.get_estado_display }}</td><td class="num">{{ v.total|pesos }}</td></tr>
       {% empty %}
       <tr><td colspan="5" style="color: var(--texto-3)">Todavía no hay ventas en este turno.</td></tr>
       {% endfor %}

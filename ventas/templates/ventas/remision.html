@@ -1,0 +1,94 @@
+{% load static erp %}<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Remisión {{ venta.folio }} · {{ negocio }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,400..900;1,62..125,400..900&family=Geist+Mono:wght@400..600&display=swap">
+<link rel="stylesheet" href="{% static 'ventas/erp.css' %}">
+<style>@page { size: {% if formato == 'ticket' %}80mm auto; margin: 3mm{% else %}letter; margin: 12mm{% endif %}; }</style>
+</head>
+<body class="doc doc-{{ formato }}">
+<nav class="doc-herramientas" aria-label="Remisión">
+  <button class="btn-primario" type="button" onclick="window.print()">Imprimir</button>
+  <span class="doc-formatos">
+    <a href="?formato=carta"{% if formato == 'carta' %} aria-current="true"{% endif %}>Hoja carta</a>
+    <a href="?formato=ticket"{% if formato == 'ticket' %} aria-current="true"{% endif %}>Ticket 80 mm</a>
+  </span>
+  <a href="{% url 'mostrador' %}">Volver al mostrador</a>
+</nav>
+
+<article class="remision{% if venta.estado == 'CANCELADA' %} cancelada{% endif %}">
+  <header class="rem-cabeza">
+    <div class="rem-negocio">
+      <span class="sello-negocio" aria-hidden="true">{{ negocio|slice:":1" }}</span>
+      <div>
+        <b>{{ negocio }}</b>
+        <span>Afinación · lubricantes · químicos</span>
+        {% if rfc %}<span>RFC {{ rfc }}</span>{% endif %}
+        {% if direccion %}<span>{{ direccion }}</span>{% endif %}
+        {% if telefono %}<span>Tel. {{ telefono }}</span>{% endif %}
+      </div>
+    </div>
+    <div class="rem-folio">
+      <h1>Remisión</h1>
+      <b>{{ venta.folio }}</b>
+      <span>{{ venta.fecha|date:"j M Y, H:i" }}</span>
+    </div>
+  </header>
+
+  <dl class="rem-datos">
+    <div><dt>Cliente</dt><dd>{{ venta.cliente }}{% if venta.cliente.rfc %} · RFC {{ venta.cliente.rfc }}{% endif %}{% if venta.cliente.telefono %} · Tel. {{ venta.cliente.telefono }}{% endif %}</dd></div>
+    {% if venta.vehiculo %}<div><dt>Vehículo</dt><dd>{{ venta.vehiculo }}</dd></div>{% endif %}
+    <div><dt>Pago</dt><dd>{{ venta.get_forma_pago_display }}{% if venta.estado == 'CREDITO' %} · {{ venta.cliente.dias_credito }} días, vence {{ venta.vence|date:"j M Y" }}{% endif %}</dd></div>
+    <div><dt>Atendió</dt><dd>{{ venta.usuario.get_short_name|default:venta.usuario.get_username|default:"—" }}</dd></div>
+  </dl>
+
+  <table class="rem-tabla">
+    <thead><tr><th class="num">Cant.</th><th>Código</th><th>Descripción</th><th class="num">P. unitario</th><th class="num">Importe</th></tr></thead>
+    <tbody>
+      {% for ln in lineas %}
+      <tr>
+        <td class="num">{{ ln.cantidad|cant }} <small>{{ ln.unidad.clave }}</small></td>
+        <td class="rem-codigo">{{ ln.producto.numero_parte|default:ln.producto.sku }}</td>
+        <td>{{ ln.producto.nombre }} <small>{{ ln.producto.marca }}</small></td>
+        <td class="num">{{ ln.precio_unitario|pesos }}</td>
+        <td class="num">{{ ln.importe|pesos }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="rem-pie">
+    <div class="rem-notas">
+      {% if venta.estado == 'CREDITO' %}
+      <p class="rem-credito"><b>A crédito.</b> Saldo {{ venta.saldo|pesos }}{% if abonado %} (abonado {{ abonado|pesos }}){% endif %}. Vence el {{ venta.vence|date:"j \d\e F \d\e Y" }}.</p>
+      {% endif %}
+      {% if pedido %}
+      <div class="rem-pedido">
+        <b>Quedó sobre pedido · se cobra al entregar</b>
+        <table>
+          {% for p in pedido %}<tr><td>{{ p.cantidad }} ×</td><td class="rem-codigo">{{ p.codigo }}</td><td>{{ p.descripcion }}</td><td class="num">{{ p.importe|pesos }}</td></tr>{% endfor %}
+        </table>
+        <span>Cotizado {{ pedido_total|pesos }}, IVA incluido.</span>
+      </div>
+      {% endif %}
+    </div>
+    <table class="rem-totales">
+      <tr><th>Subtotal</th><td>{{ subtotal|pesos }}</td></tr>
+      <tr><th>IVA 16%</th><td>{{ venta.iva|pesos }}</td></tr>
+      <tr class="rem-total"><th>Total</th><td>{{ venta.total|pesos }}</td></tr>
+    </table>
+  </div>
+
+  <footer class="rem-firmas">
+    <div><span></span>Recibí de conformidad · nombre y firma</div>
+    <div><span></span>Entregó</div>
+  </footer>
+  <p class="rem-leyenda">Este documento no es un comprobante fiscal.{% if venta.estado == 'CANCELADA' %} <b>Venta cancelada.</b>{% endif %}</p>
+</article>
+{% if imprimir %}<script>window.addEventListener("load", () => setTimeout(() => window.print(), 300));</script>{% endif %}
+</body>
+</html>

@@ -57,6 +57,10 @@ class MostradorTests(TestCase):
         self.assertContains(r, "Total a cobrar")
         # el vehículo queda en recientes
         self.assertEqual(self.client.session["recientes"][0]["modelo"], "Tsuru")
+        # con vehículo elegido hay cómo limpiarlo; sin vehículo, no
+        self.assertContains(r, f'<a class="limpiar" href="{reverse("mostrador")}"')
+        self.assertContains(r, "Cambiar vehículo")
+        self.assertNotContains(self.client.get(reverse("mostrador")), 'class="limpiar"')
 
     def test_listas_marca_anio_modelo_motor(self):
         r = self.client.get(reverse("mostrador"))
@@ -151,3 +155,124 @@ class MostradorTests(TestCase):
         lineas = self.client.session["ticket"]["lineas"]
         self.assertEqual(len(lineas), 3)
         self.assertEqual({ln["pos"]: ln["nivel"] for ln in lineas}["aceite"], "PRE")
+
+    def test_captura_por_codigo(self):
+        # sin guiones ni mayúsculas: es mi producto PH966B, entra directo
+        r = self.client.post(reverse("ticket_codigo"), {"codigo": "ph-966b", "cantidad": "1", "next": "/"})
+        self.assertRedirects(r, "/", fetch_redirect_response=False)
+        self.assertEqual(self.client.session["ticket"]["lineas"],
+                         [{"clave": f"producto:{self.fram.pk}", "pos": "", "cantidad": "1", "nivel": ""}])
+        # se confirma en la franja de captura y el renglón sale resaltado; al recargar ya no
+        r = self.client.get("/")
+        self.assertContains(r, 'class="captura-hecho"')
+        self.assertContains(r, "1 × $98 = <b>$98</b>")
+        self.assertContains(r, '<span class="renglon-nuevo">Agregado</span>')
+        self.assertNotContains(self.client.get("/"), 'class="captura-hecho"')
+        # el mismo código otra vez suma a su renglón; «2*» es la cantidad
+        self.client.post(reverse("ticket_codigo"), {"codigo": "2*PH966B"})
+        self.assertEqual(self.client.session["ticket"]["lineas"][0]["cantidad"], "3")
+        self.assertContains(self.client.get("/"), "+2, ya van 3 × $98 = <b>$294</b>")
+        self.client.post(reverse("ticket_cantidad", args=[0]), {"cantidad": "4"})
+        self.assertContains(self.client.get("/"), '<span class="renglon-nuevo">Cambió</span>')
+        # un código que solo está en la lista del proveedor entra sobre pedido
+        self.client.post(reverse("ticket_codigo"), {"codigo": "GP37"})
+        gp = PartidaListaProveedor.objects.get(codigo="GP-37")
+        self.assertEqual(self.client.session["ticket"]["lineas"][1]["clave"], f"partida:{gp.pk}")
+        # varias coincidencias por nombre: se muestran para elegir, con la cantidad
+        r = self.client.post(reverse("ticket_codigo"), {"codigo": "filtro aceite", "cantidad": "2",
+                                                        "next": "/?armadora=Nissan"})
+        self.assertEqual(r["Location"], "/?armadora=Nissan&codigo=filtro+aceite&cantidad=2")
+        r = self.client.get(r["Location"])
+        self.assertContains(r, "Elige: «filtro aceite»")
+        self.assertContains(r, "AP-FAC3682")
+        self.assertNotContains(r, "CA6900")
+        self.assertEqual(r.context["aqui"], "/?armadora=Nissan")  # al elegir no repite la búsqueda
+        # lo que no existe avisa y no agrega nada
+        r = self.client.post(reverse("ticket_codigo"), {"codigo": "ZZZ-999"}, follow=True)
+        self.assertContains(r, "No encontré «ZZZ-999»")
+        self.assertEqual(len(self.client.session["ticket"]["lineas"]), 2)
+
+    def test_sugerencias_mientras_se_teclea(self):
+        url = reverse("ticket_sugerir")
+        d = self.client.get(url, {"q": "ph9"}).json()["sugerencias"]
+        self.assertEqual(d[0]["codigo"], "PH966B")  # mi producto, con existencia y precio de lista
+        self.assertEqual((d[0]["clave"], d[0]["hay"], d[0]["precio"], d[0]["precio_txt"]),
+                         (f"producto:{self.fram.pk}", True, "98", "$98"))
+        # el código exacto va primero aunque haya otros que empiezan igual
+        PartidaListaProveedor.objects.filter(codigo="15208-H8916").update(codigo="PH966B-X")
+        d = self.client.get(url, {"q": "ph966b"}).json()["sugerencias"]
+        self.assertEqual([s["codigo"] for s in d][:2], ["PH966B", "PH966B-X"])
+        d = self.client.get(url, {"q": "gp 3"}).json()["sugerencias"]  # sin guion y con espacio
+        self.assertEqual([s["codigo"] for s in d], ["GP-37"])
+        self.assertFalse(d[0]["hay"])
+        # contiene, no solo empieza con: «6900» encuentra CA6900
+        self.assertIn("CA6900", [s["codigo"] for s in self.client.get(url, {"q": "6900"}).json()["sugerencias"]])
+        # por descripción y aplicación
+        d = self.client.get(url, {"q": "filtro aire"}).json()["sugerencias"]
+        self.assertEqual([s["codigo"] for s in d], ["CA6900"])
+        self.assertEqual(self.client.get(url, {"q": "p"}).json()["sugerencias"], [])  # muy corto
+
+    def test_cantidad_y_precio_tecleados(self):
+        url = reverse("ticket_codigo")
+        # eligió la sugerencia: viene la clave, con su cantidad y un precio con IVA distinto al de lista
+        self.client.post(url, {"codigo": "PH966B", "clave": f"producto:{self.fram.pk}", "cantidad": "2",
+                               "precio": "$120"})
+        self.assertEqual(self.client.session["ticket"]["lineas"],
+                         [{"clave": f"producto:{self.fram.pk}", "pos": "", "cantidad": "2", "nivel": "", "precio": "120.00"}])
+        r = self.client.get(reverse("mostrador"))
+        self.assertContains(r, "precio especial")
+        self.assertEqual(r.context["total"], D("240"))
+        # abajo del costo (52.43 sin IVA) no lo deja quien atiende el mostrador, y no dice el costo
+        r = self.client.post(url, {"codigo": "GP-37", "precio": "50"}, follow=True)
+        self.assertContains(r, "queda abajo del costo")
+        self.assertNotContains(r, "66.17")
+        self.assertEqual(len(self.client.session["ticket"]["lineas"]), 1)
+        # cambiar el precio desde el renglón del ticket; vacío regresa al de la lista
+        self.client.post(reverse("ticket_precio", args=[0]), {"precio": "110"})
+        self.assertEqual(self.client.session["ticket"]["lineas"][0]["precio"], "110.00")
+        self.client.post(reverse("ticket_precio", args=[0]), {"precio": "40"})  # abajo del costo: se queda en 110
+        self.assertEqual(self.client.session["ticket"]["lineas"][0]["precio"], "110.00")
+        # un administrador sí puede, con aviso
+        self.user.is_staff = True
+        self.user.save()
+        r = self.client.post(reverse("ticket_precio", args=[0]), {"precio": "55"}, follow=True)
+        self.assertContains(r, "Ojo: $55 queda abajo del costo")
+        self.client.post(reverse("ticket_precio", args=[0]), {"precio": ""})
+        self.assertNotIn("precio", self.client.session["ticket"]["lineas"][0])
+        # al cobrar se respeta el precio tecleado, también en lo que queda sobre pedido
+        self.client.post(reverse("ticket_precio", args=[0]), {"precio": "115.50"})
+        self.client.post(url, {"codigo": "GP-37", "cantidad": "1", "precio": "130"})
+        self.client.post(reverse("caja"), {"accion": "abrir", "fondo": "500"})
+        self.client.post(reverse("ticket_cobrar"), {"forma_pago": "EFECTIVO"})
+        venta = Venta.objects.get()
+        self.assertEqual(venta.lineas.get().precio_unitario, D("115.50"))
+        self.assertEqual(venta.total, D("231.00"))
+        self.assertEqual((venta.pedido[0]["codigo"], venta.pedido[0]["precio"]), ("GP-37", "130.00"))
+
+    def test_leer_captura(self):
+        self.assertEqual(m.leer_captura("4*PH966B"), ("PH966B", D("4")))
+        self.assertEqual(m.leer_captura("3 x GP-37"), ("GP-37", D("3")))
+        self.assertEqual(m.leer_captura("15208X123", "2"), ("15208X123", D("2")))  # la x pegada es parte del código
+        self.assertEqual(m.leer_captura("CA6900", ""), ("CA6900", D("1")))
+
+    def test_remision_de_la_venta(self):
+        self.client.post(reverse("caja"), {"accion": "abrir", "fondo": "500"})
+        base = {"anio": 2003, "armadora": "Nissan", "modelo": "Tsuru", "litros": "1.6"}
+        ca = f"partida:{PartidaListaProveedor.objects.get(codigo='CA6900').pk}"
+        self.client.post(reverse("ticket_agregar"), {"clave": f"producto:{self.fram.pk}", "pos": "aceite"})
+        self.client.post(reverse("ticket_agregar"), {"clave": ca, "pos": "aire"})
+        r = self.client.post(reverse("ticket_cobrar"), {"forma_pago": "EFECTIVO", **base}, follow=True)
+        venta = Venta.objects.get()
+        self.assertEqual(venta.vehiculo, "Nissan Tsuru 2003 · 1.6 L")
+        self.assertEqual([p["codigo"] for p in venta.pedido], ["CA6900"])
+        # al volver al mostrador se ofrece imprimir la remisión
+        self.assertContains(r, reverse("remision", args=[venta.folio]) + "?imprimir=1")
+        r = self.client.get(reverse("remision", args=[venta.folio]))
+        for texto in (venta.folio, "Remisión", "Nissan Tsuru 2003", "PH966B", "Quedó sobre pedido", "CA6900",
+                      "$98", "IVA 16%", "no es un comprobante fiscal", "Recibí de conformidad"):
+            self.assertContains(r, texto)
+        self.assertContains(self.client.get(reverse("remision", args=[venta.folio]), {"formato": "ticket"}), "doc-ticket")
+        # se encuentra en Remisiones por folio o por cliente
+        self.assertContains(self.client.get(reverse("remisiones"), {"q": "público"}), venta.folio)
+        self.assertNotContains(self.client.get(reverse("remisiones"), {"q": "nadie"}), venta.folio)
+        self.assertEqual(self.client.get(reverse("remision", args=["VTA-999999"])).status_code, 404)
