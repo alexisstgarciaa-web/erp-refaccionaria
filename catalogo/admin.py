@@ -20,15 +20,20 @@ class EspecificacionInline(admin.StackedInline):
     extra = 0
 
 
+class PrecioInline(admin.TabularInline):
+    model = m.Precio
+    extra = 0
+
+
 @admin.register(m.Producto)
 class ProductoAdmin(admin.ModelAdmin):
-    list_display = ["sku", "nombre", "marca", "numero_parte", "familia", "existencia", "costo_promedio", "activo"]
-    list_filter = ["familia", "marca", "maneja_caducidad", "activo"]
+    list_display = ["sku", "nombre", "marca", "nivel", "familia", "existencia", "costo_promedio", "activo"]
+    list_filter = ["nivel", "familia", "marca", "maneja_caducidad", "activo"]
     search_fields = ["sku", "nombre", "numero_parte", "codigo_barras",
                      "grupo_equivalencia__referencias__numero_parte"]
     readonly_fields = ["existencia", "costo_promedio"]
     autocomplete_fields = ["grupo_equivalencia"]
-    inlines = [ConversionInline, EspecificacionInline, AplicacionInline]
+    inlines = [PrecioInline, ConversionInline, EspecificacionInline, AplicacionInline]
 
 
 class ReferenciaInline(admin.TabularInline):

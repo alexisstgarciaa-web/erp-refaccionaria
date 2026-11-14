@@ -1,0 +1,24 @@
+{% load erp %}
+<aside class="panel ticket" aria-label="Ticket">
+  <header class="ticket-cabeza">
+    <h2>Ticket</h2>
+    <span>{% now "j/m/Y H:i" %}</span>
+  </header>
+  <form method="post" action="{% url 'ticket_cliente' %}" class="ticket-cliente">{% csrf_token %}
+    <input type="hidden" name="next" value="{{ aqui }}">
+    <label for="cliente">Cliente <small>lista {{ cliente.lista_precio }}</small></label>
+    <select id="cliente" name="cliente" onchange="this.form.submit()">
+      {% for c in clientes %}<option value="{{ c.pk }}"{% if c.pk == cliente.pk %} selected{% endif %}>{{ c }}{% if c.dias_credito %} · crédito {{ c.dias_credito }} días{% endif %}</option>{% endfor %}
+    </select>
+    <noscript><button class="btn-sec" type="submit">Cambiar</button></noscript>
+  </form>
+
+  {% if not lineas %}<p class="ticket-vacio">Todavía no hay piezas. Toca una opción o «Llevar completa» en una afinación.</p>{% endif %}
+  {% for ln in lineas %}{% if not ln.sobre_pedido %}{% include "ventas/_renglon.html" %}{% endif %}{% endfor %}
+
+  {% if pedido_total %}
+    <h3 class="ticket-pedido">Sobre pedido · se cobra al entregar</h3>
+    {% for ln in lineas %}{% if ln.sobre_pedido %}{% include "ventas/_renglon.html" %}{% endif %}{% endfor %}
+    <p class="ticket-nota">Al cobrar queda la orden al proveedor en borrador.</p>
+  {% endif %}
+</aside>

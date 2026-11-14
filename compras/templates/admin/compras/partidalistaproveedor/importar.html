@@ -1,0 +1,14 @@
+{% extends "admin/base_site.html" %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Inicio</a> › <a href="{% url 'admin:compras_partidalistaproveedor_changelist' %}">Partidas de lista de proveedor</a> › Importar</div>{% endblock %}
+{% block content %}
+<h1>Importar lista de precios de proveedor</h1>
+<p>Sube uno o varios archivos .xlsx con el formato de MORSA (encabezados Código, Tipo, Descripción, Marca, Aplicación, Precio, Equivalencias). Volver a subir una lista actualiza costos sin duplicar. No crea productos: solo la lista del proveedor y sus vehículos.</p>
+<form method="post" enctype="multipart/form-data">{% csrf_token %}
+  <fieldset class="module aligned">
+    {% for campo in form %}
+      <div class="form-row">{{ campo.errors }}{{ campo.label_tag }} {{ campo }}{% if campo.help_text %}<div class="help">{{ campo.help_text }}</div>{% endif %}</div>
+    {% endfor %}
+  </fieldset>
+  <div class="submit-row"><input type="submit" value="Importar" class="default"></div>
+</form>
+{% endblock %}

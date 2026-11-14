@@ -1,0 +1,31 @@
+# Publicación de prueba en Render (plan gratis). En Render: New > Blueprint > este repositorio.
+databases:
+  - name: erp-db
+    plan: free
+    databaseName: erp
+    user: erp
+
+services:
+  - type: web
+    name: erp-refaccionaria
+    runtime: python
+    plan: free
+    buildCommand: ./build.sh
+    startCommand: gunicorn config.wsgi:application
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: DATABASE_URL
+        fromDatabase:
+          name: erp-db
+          property: connectionString
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_DEBUG
+        value: "0"
+      - key: DJANGO_SUPERUSER_USERNAME
+        sync: false
+      - key: DJANGO_SUPERUSER_PASSWORD
+        sync: false
+      - key: NEGOCIO_NOMBRE
+        sync: false

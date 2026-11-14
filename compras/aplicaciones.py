@@ -268,14 +268,14 @@ def patron_modelo(modelo):
     return "^" + "[- ]?".join(map(re.escape, clave_modelo(modelo)))
 
 
-def coincide(anio, armadora=None, modelo=None, litros=None, prefijo=""):
+def coincide(anio=None, armadora=None, modelo=None, litros=None, prefijo=""):
     """Filtro Q para un vehículo elegido en el selector. Sirve para AplicacionProveedor y para
     catalogo.Vehiculo (con prefijo, ej. "aplicaciones__vehiculo__"). El modelo es el modelo base
     (Tsuru incluye Tsuru II y Tsuru III). Si el texto no decía motor, la pieza se considera válida."""
     from django.db.models import Q
 
     f = lambda campo: prefijo + campo  # noqa: E731
-    q = Q(**{f("anio_desde__lte"): anio, f("anio_hasta__gte"): anio})
+    q = Q(**{f("anio_desde__lte"): anio, f("anio_hasta__gte"): anio}) if anio else Q()
     if armadora:
         q &= Q(**{f("armadora"): armadora})
     if modelo:
@@ -285,9 +285,10 @@ def coincide(anio, armadora=None, modelo=None, litros=None, prefijo=""):
     return q
 
 
-def opciones(anio, armadora=None, modelo=None):
-    """Opciones del selector de vehículo del mostrador (año › armadora › modelo › litros), las más
-    comunes primero. Devuelve [(valor, partidas que le quedan), ...]."""
+def opciones(anio=None, armadora=None, modelo=None):
+    """Opciones de un paso del selector de vehículo, las más comunes primero: sin armadora da las
+    armadoras; con armadora, los modelos; con modelo, los litros del motor. El año es opcional.
+    Devuelve [(valor, partidas que le quedan), ...]."""
     from django.db.models import Count
 
     from .models import AplicacionProveedor
@@ -309,3 +310,30 @@ def opciones(anio, armadora=None, modelo=None):
         return sorted(res, key=lambda x: (-x[1], x[0]))
     filas = qs.values("armadora").annotate(n=Count("partida", distinct=True)).order_by("-n", "armadora")
     return [(f["armadora"], f["n"]) for f in filas]
+
+
+def anios_de(armadora, hasta=None):
+    """Años en que hay piezas para la armadora, del más nuevo al más viejo (une los rangos de la lista)."""
+    from datetime import date
+
+    from .models import AplicacionProveedor
+
+    hasta = hasta or date.today().year + 1
+    anios = set()
+    for desde, fin in (AplicacionProveedor.objects.filter(armadora=armadora)
+                       .values_list("anio_desde", "anio_hasta").distinct()):
+        anios.update(range(desde, min(fin, hasta) + 1))
+    return sorted(anios, reverse=True)
+
+
+def selector(armadora="", anio=None, modelo=""):
+    """Las cuatro listas del mostrador, en orden marca › año › modelo › motor. Cada lista sale
+    filtrada por lo elegido antes; mientras falte un paso anterior, la lista va vacía."""
+    res = {"marcas": opciones(), "anios": [], "modelos": [], "motores": []}
+    if armadora:
+        res["anios"] = anios_de(armadora)
+        if anio:
+            res["modelos"] = sorted(opciones(anio, armadora), key=lambda x: x[0].lower())
+            if modelo:
+                res["motores"] = opciones(anio, armadora, modelo)
+    return res

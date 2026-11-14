@@ -1,0 +1,165 @@
+{% extends "ventas/base.html" %}
+{% load erp static %}
+{% block titulo %}{% if veh %}{{ veh }}{% else %}Mostrador{% endif %}{% endblock %}
+{% block cuerpo %}con-cobro{% endblock %}
+{% block contenido %}
+
+<section class="panel vehiculo-panel" aria-label="Vehículo del cliente">
+  <form class="selector" method="get" action="{% url 'mostrador' %}" data-listas="{% url 'vehiculo_listas' %}">
+    <label class="lista">
+      <span>Marca</span>
+      <select name="armadora">
+        <option value="">Elige la marca</option>
+        <optgroup label="Las que más salen">
+          {% for v, n in marcas_comunes %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+        </optgroup>
+        <optgroup label="Todas">
+          {% for v, n in marcas %}<option value="{{ v }}"{% if v == sel.armadora %} selected{% endif %}>{{ v }}</option>{% endfor %}
+        </optgroup>
+      </select>
+    </label>
+    <label class="lista">
+      <span>Año</span>
+      <select name="anio"{% if not listas.anios %} disabled{% endif %}{% if paso == 'anio' %} autofocus{% endif %}>
+        <option value="">Año</option>
+        {% for a in listas.anios %}<option value="{{ a }}"{% if a == sel.anio %} selected{% endif %}>{{ a }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="lista">
+      <span>Modelo</span>
+      <select name="modelo"{% if not listas.modelos %} disabled{% endif %}{% if paso == 'modelo' %} autofocus{% endif %}>
+        <option value="">Modelo</option>
+        {% for v, n in listas.modelos %}<option value="{{ v }}"{% if v == sel.modelo %} selected{% endif %}>{{ v }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="lista">
+      <span>Motor</span>
+      <select name="litros"{% if not sel.modelo %} disabled{% endif %}{% if paso == 'motor' %} autofocus{% endif %}>
+        <option value="">Motor</option>
+        {% for v, n in listas.motores %}<option value="{{ v }}"{% if v == sel.litros %} selected{% endif %}>{{ v }} L</option>{% endfor %}
+        {% if sel.modelo %}<option value="todos"{% if sel.litros == 'todos' %} selected{% endif %}>Todos los motores</option>{% endif %}
+      </select>
+    </label>
+    <button class="btn-primario" type="submit">Ver piezas</button>
+  </form>
+
+  <form class="buscador" method="get" action="{% url 'mostrador' %}" role="search">
+    <label for="q">O escríbelo</label>
+    <div class="buscador-campo">
+      <input id="q" name="q" placeholder="Ej. tsuru 2003" autocomplete="off"{% if paso == 'marca' %} autofocus{% endif %}>
+      <button type="submit">Buscar</button>
+    </div>
+  </form>
+
+  {% if recientes %}
+  <div class="recientes"><span>Recientes</span>
+    {% for r in recientes %}<a class="chip" href="{{ r.url }}">{{ r.armadora }} {{ r.modelo }} {{ r.anio }}{% if r.litros and r.litros != 'todos' %} · {{ r.litros }} L{% endif %}</a>{% endfor %}
+  </div>
+  {% endif %}
+</section>
+
+<div class="mesa">
+<section class="centro ficha">
+
+{% if paso == 'ficha' %}
+  <header class="vehiculo-titulo">
+    <p class="antetitulo">Afinación para</p>
+    <h1>{{ veh.armadora }} {{ veh.modelo }} <span>{{ veh.anio }}</span></h1>
+    <p class="detalle">{% if veh.litros %}Motor {{ veh.litros }} L{% else %}Todos los motores{% endif %} · primero tus productos, luego la lista del proveedor</p>
+  </header>
+
+  <section class="paquetes" aria-label="Afinación completa por nivel">
+    {% for t in totales %}
+    <form method="post" action="{% url 'ticket_afinacion' %}">{% csrf_token %}
+      {% for k, v in base.items %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+      <input type="hidden" name="nivel" value="{{ t.clave }}"><input type="hidden" name="next" value="{{ aqui }}">
+      <button type="submit" class="paquete paquete-{{ t.clave|lower }}"{% if not t.piezas %} disabled{% endif %}>
+        <span class="paquete-nivel">Afinación {{ t.nombre|lower }}</span>
+        <span class="paquete-precio">{{ t.total|pesos }}</span>
+        <span class="paquete-detalle">{{ t.piezas }} pieza{{ t.piezas|pluralize }}{% if t.pedido %} · {{ t.pedido }} sobre pedido{% endif %}</span>
+        <span class="paquete-accion">Llevar completa</span>
+      </button>
+    </form>
+    {% endfor %}
+  </section>
+
+  <h2 class="titulo-seccion">Pieza por pieza</h2>
+  {% for f in filas %}
+  <article class="panel pieza{% if f.elegida %} elegida{% endif %}{% if not f.hay %} sin-piezas{% endif %}">
+    <header class="pieza-cabeza">
+      <span class="pieza-num">{{ f.p.n }}</span>
+      <h3>{{ f.p.nombre }}</h3>
+      {% if f.p.cantidad > 1 %}<span class="lleva">lleva {{ f.p.cantidad|cant }}</span>{% endif %}
+      {% if f.elegida %}<span class="en-ticket">En el ticket</span>{% endif %}
+      {% if not f.hay %}<span class="sin-nada">{% if f.p.tipo_partida %}No viene en la lista del proveedor para este vehículo.{% else %}Todavía no está en tu catálogo. Dala de alta en Administración.{% endif %}</span>{% endif %}
+    </header>
+    {% if f.hay %}
+    <div class="opciones">
+      {% for c in f.celdas %}
+        {% if c.op %}
+        <form method="post" action="{% url 'ticket_agregar' %}">{% csrf_token %}
+          <input type="hidden" name="clave" value="{{ c.op.clave }}"><input type="hidden" name="pos" value="{{ f.p.clave }}">
+          <input type="hidden" name="nivel" value="{{ c.nivel }}"><input type="hidden" name="next" value="{{ aqui }}">
+          <button type="submit" class="opcion opcion-{{ c.nivel|lower }}{% if c.en_ticket %} marcada{% endif %}"{% if c.op.precio is None %} disabled{% endif %}
+                  aria-pressed="{% if c.en_ticket %}true{% else %}false{% endif %}">
+            <span class="opcion-nivel">{{ c.nombre }}</span>
+            <span class="opcion-marca">{{ c.op.marca }}</span>
+            <span class="opcion-codigo">{{ c.op.codigo }}</span>
+            {% if c.op.rango %}<span class="opcion-rango">Le queda: {{ c.op.rango }}</span>{% endif %}
+            {% if c.op.advertencia %}<span class="opcion-ojo">Ojo: {{ c.op.advertencia|lower }}</span>{% endif %}
+            <span class="opcion-pie">
+              {% if c.op.sobre_pedido %}<span class="estado pedido">Sobre pedido</span>{% else %}<span class="estado hay">Hay {{ c.op.existencia|cant }}</span>{% endif %}
+              <span class="opcion-precio">{% if c.op.precio is not None %}{{ c.op.precio|por:f.p.cantidad|pesos }}{% else %}sin precio{% endif %}</span>
+            </span>
+          </button>
+        </form>
+        {% else %}
+        <div class="opcion vacia"><span class="opcion-nivel">{{ c.nombre }}</span><span>Sin opción</span></div>
+        {% endif %}
+      {% endfor %}
+    </div>
+    {% if f.otras %}
+    <details class="otras">
+      <summary>{% if f.otra_elegida %}En el ticket: {{ f.otra_elegida.codigo }} {{ f.otra_elegida.marca }} · {% endif %}Ver {{ f.otras|length }}{% if f.mas %}+{% endif %} opciones más</summary>
+      <div class="otras-lista">
+        {% for o in f.otras %}
+        <form method="post" action="{% url 'ticket_agregar' %}">{% csrf_token %}
+          <input type="hidden" name="clave" value="{{ o.clave }}"><input type="hidden" name="pos" value="{{ f.p.clave }}">
+          <input type="hidden" name="nivel" value="{{ o.nivel }}"><input type="hidden" name="next" value="{{ aqui }}">
+          <button type="submit"{% if o.precio is None %} disabled{% endif %}>
+            <span class="opcion-codigo">{{ o.codigo }}</span><span class="opcion-marca">{{ o.marca }}</span>
+            {% if o.sobre_pedido %}<span class="estado pedido">Pedido</span>{% else %}<span class="estado hay">Hay {{ o.existencia|cant }}</span>{% endif %}
+            <span class="opcion-precio">{{ o.precio|por:f.p.cantidad|pesos|default:"sin precio" }}</span>
+          </button>
+        </form>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+    {% endif %}
+  </article>
+  {% endfor %}
+  <p class="nota">Toca una opción para llevarla al ticket. Tus productos van primero según su nivel; donde no tienes, se llena con la lista del proveedor, de la más barata (Económico) a la más cara (Premium). Lo que va <b>sobre pedido</b> se cotiza a costo + {{ sobreprecio }}% + IVA y se cobra al entregar.</p>
+
+{% else %}
+  <div class="guia">
+    <ol class="pasos" aria-label="Pasos">
+      {% for clave, nombre in "marca:Marca,anio:Año,modelo:Modelo,motor:Motor"|pasos:paso %}<li class="{{ clave }}">{{ nombre }}</li>{% endfor %}
+    </ol>
+    <h1>
+      {% if paso == 'marca' %}¿Qué vehículo trae el cliente?
+      {% elif paso == 'anio' %}{{ sel.armadora }}: ¿de qué año?
+      {% elif paso == 'modelo' %}{{ sel.armadora }} {{ sel.anio }}: ¿qué modelo?
+      {% else %}{{ sel.armadora }} {{ sel.modelo }} {{ sel.anio }}: ¿qué motor trae?{% endif %}
+    </h1>
+    <p>{% if paso == 'motor' %}Si el cliente no sabe, elige «Todos los motores» y salen las piezas de cada uno.{% else %}Elige en las listas de arriba o escribe el vehículo en el buscador, por ejemplo «tsuru 2003».{% endif %}</p>
+  </div>
+{% endif %}
+
+</section>
+{% include "ventas/_ticket.html" %}
+</div>
+{% endblock %}
+
+{% block abajo %}{% include "ventas/_cobro.html" %}{% endblock %}
+{% block scripts %}<script src="{% static 'ventas/mostrador.js' %}" defer></script>{% endblock %}

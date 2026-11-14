@@ -1,0 +1,14 @@
+{% extends "ventas/base.html" %}
+{% block titulo %}Entrar{% endblock %}
+{% block contenido %}
+<section class="panel entrar">
+  <h1>Entrar</h1>
+  {% if form.errors %}<div class="aviso error" style="margin-bottom: 14px">Usuario o contraseña incorrectos.</div>{% endif %}
+  <form method="post">{% csrf_token %}
+    <label class="campo">Usuario <input name="username" autocomplete="username" autofocus required></label>
+    <label class="campo">Contraseña <input type="password" name="password" autocomplete="current-password" required></label>
+    <input type="hidden" name="next" value="{{ next }}">
+    <button class="btn" type="submit">Entrar</button>
+  </form>
+</section>
+{% endblock %}
