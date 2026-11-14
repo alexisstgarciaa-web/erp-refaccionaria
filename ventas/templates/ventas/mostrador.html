@@ -78,7 +78,15 @@
     <span class="con-signo"><input name="precio" id="captura-precio" inputmode="decimal" placeholder="De lista" autocomplete="off"></span>
   </div>
   <button class="btn-primario" type="submit">Agregar</button>
-  <p class="captura-ayuda">Escribe y elige con <b>↑ ↓</b> y <b>Enter</b> · escaneado entra directo · <b>F2</b> regresa aquí · precio vacío = el de la lista</p>
+  {% if agregado %}
+  <p class="captura-hecho" role="status">
+    <b class="captura-hecho-ok">Agregado</b>
+    <span class="captura-hecho-pieza"><b>{{ agregado.codigo }}</b> {{ agregado.marca }} · {{ agregado.nombre }}</span>
+    <span class="captura-hecho-cuenta">{% if agregado.sumado %}+{{ agregado.agregada }}, ya van {% endif %}{{ agregado.cantidad }} × {{ agregado.precio }}{% if agregado.especial %} <i>especial</i>{% endif %} = <b>{{ agregado.importe }}</b></span>
+    {% if agregado.pedido %}<span class="estado pedido">Sobre pedido</span>{% endif %}
+  </p>
+  {% endif %}
+  <p class="captura-ayuda"><b>Enter</b> avanza: código › cantidad › precio › agrega · <b>↑ ↓</b> eligen sugerencia · <b>F2</b> regresa aquí · <b>Esc</b> cierra</p>
 </form>
 
 {% if ultima_venta %}

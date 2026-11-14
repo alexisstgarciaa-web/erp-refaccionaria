@@ -132,6 +132,9 @@ def mostrador(request):
         ctx["por_codigo"] = {"texto": texto, "cantidad": cuantas, "precio": g.get("precio", ""),
                              "resultados": m.buscar_codigo(texto, ticket.cliente.lista_precio)[0]}
     ctx["enfocar_codigo"] = request.session.pop("enfocar_codigo", False) or bool(g.get("codigo"))
+    ctx["recien"] = request.session.pop("recien", [])
+    ctx["recien_tipo"] = request.session.pop("recien_tipo", "Agregado")
+    ctx["agregado"] = request.session.pop("agregado", None)
     folio = request.session.pop("ultima_venta", None)
     ctx["ultima_venta"] = Venta.objects.filter(folio=folio).first() if folio else None
     return render(request, "ventas/mostrador.html", ctx)
@@ -185,6 +188,25 @@ def _ficha(request, ticket, veh, litros_param, pos_clave=None):
             "elegidas": len(elegidas), "sobreprecio": int(m.sobreprecio() * 100)}
 
 
+def _marcar(request, ticket, indices, cantidad=None):
+    """Lo que se acaba de agregar o cambiar: se resalta en el ticket y, si es una sola pieza, se
+    confirma en la franja de captura, que es donde está la vista de quien atiende."""
+    request.session["recien"] = [i for i in indices if i is not None]
+    request.session["recien_tipo"] = "Agregado"
+    if cantidad is None or len(indices) != 1:
+        return
+    ln = next((x for x in ticket.lineas() if x.i == indices[0]), None)
+    if ln is None:
+        return
+    nombre = ln.pos.nombre if ln.pos else (getattr(ln.objeto, "nombre", "") or getattr(ln.objeto, "descripcion", ""))
+    request.session["agregado"] = {
+        "codigo": ln.opcion.codigo, "marca": ln.opcion.marca, "nombre": nombre[:60],
+        "agregada": cant(cantidad), "cantidad": cant(ln.cantidad), "sumado": ln.cantidad != cantidad,
+        "precio": pesos(ln.precio) or "sin precio", "importe": pesos(ln.importe) or "—",
+        "especial": ln.precio_especial is not None, "pedido": ln.sobre_pedido,
+    }
+
+
 def _precio_tecleado(request, obj, texto):
     """Precio con IVA por unidad tecleado en mostrador; vacío es el de la lista (None). Abajo del costo
     solo lo puede dejar un administrador, y el mensaje no dice el costo."""
@@ -208,15 +230,18 @@ def agregar(request):
     try:
         clave = request.POST["clave"]
         precio = _precio_tecleado(request, m.resolver(clave), request.POST.get("precio"))
-        ticket.agregar(clave, request.POST.get("pos"), cantidad=_decimal(request.POST.get("cantidad")),
-                       nivel=request.POST.get("nivel", ""), precio=precio)
+        cuantas = _decimal(request.POST.get("cantidad"))
+        i = ticket.agregar(clave, request.POST.get("pos"), cantidad=cuantas, nivel=request.POST.get("nivel", ""),
+                           precio=precio)
     except (KeyError, ObjectDoesNotExist):
         messages.error(request, "Esa opción ya no existe; vuelve a elegir.")
         return _volver(request)
     except ValidationError as e:
         messages.error(request, " ".join(e.messages))
         return _volver(request)
-    if not request.POST.get("pos"):
+    suelta = not request.POST.get("pos")
+    _marcar(request, ticket, [i], (cuantas or 1) if suelta else None)
+    if suelta:
         request.session["enfocar_codigo"] = True  # listo para el siguiente código
     return _volver(request)
 
@@ -248,10 +273,7 @@ def agregar_codigo(request):
         except ValidationError as e:
             messages.error(request, " ".join(e.messages))
             return _volver(request)
-        ticket.agregar(op.clave, None, cantidad=cantidad, precio=precio)
-        messages.success(request, f"{op.codigo} {op.marca} × {cant(cantidad)} al ticket"
-                         + (f" a {pesos(precio)} c/u" if precio is not None and precio != op.precio else "") + "."
-                         + (" Va sobre pedido." if op.existencia is None or op.existencia < cantidad else ""))
+        _marcar(request, ticket, [ticket.agregar(op.clave, None, cantidad=cantidad, precio=precio)], cantidad)
         return _volver(request)
     if not encontrados:
         messages.warning(request, f"No encontré «{texto}». Revisa el código o busca por nombre.")
@@ -286,14 +308,16 @@ def agregar_afinacion(request):
     litros = g.get("litros", "")
     veh = m.Vehiculo(int(g["anio"]), g.get("armadora", ""), g.get("modelo", ""), "" if litros == "todos" else litros)
     ticket = m.Ticket(request.session)
-    n = 0
+    n, agregadas = 0, []
     for p in m.POSICIONES:
         op = m.opciones_de(veh, p, ticket.cliente.lista_precio)[0][g["nivel"]]
         if op and op.precio is not None:
             ticket.agregar(op.clave, p.clave, nivel=g["nivel"])
             n += 1
+            agregadas.append((op.clave, p.clave))
     if not n:
         messages.warning(request, "No hay piezas de ese nivel para este vehículo.")
+    _marcar(request, ticket, [ticket.indice(c, p) for c, p in agregadas])
     return _volver(request)
 
 
@@ -310,6 +334,8 @@ def cantidad(request, i):
     c = _decimal(request.POST.get("cantidad"))
     if c is not None:
         m.Ticket(request.session).cambiar_cantidad(i, c)
+        if c > 0:  # en 0 se quita el renglón
+            request.session["recien"], request.session["recien_tipo"] = [i], "Cambió"
     return _volver(request)
 
 
@@ -322,6 +348,7 @@ def precio(request, i):
     if clave:
         try:
             ticket.cambiar_precio(i, _precio_tecleado(request, m.resolver(clave), request.POST.get("precio")))
+            request.session["recien"], request.session["recien_tipo"] = [i], "Cambió"
         except ValidationError as e:
             messages.error(request, " ".join(e.messages))
         except ObjectDoesNotExist:

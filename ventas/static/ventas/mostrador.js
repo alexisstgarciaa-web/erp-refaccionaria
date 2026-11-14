@@ -70,9 +70,11 @@ document.addEventListener("keydown", (e) => {
   if (c) { e.preventDefault(); c.focus(); c.select(); }
 });
 
-// Campo de código como buscador: sugiere códigos mientras se teclea. ↑ ↓ para moverse, Enter o clic
-// para elegir; al elegir se llenan el código y el precio de lista, y el foco pasa a Cantidad, donde
-// Enter agrega al ticket. Un lector de código de barras teclea y da Enter sin elegir: entra directo.
+// Captura por código, toda con Enter: Código › Cantidad › Precio › agrega.
+//  · En Código sugiere mientras se teclea; Enter elige (el código exacto, la única sugerencia o la marcada
+//    con ↑ ↓) y pasa a Cantidad. Si hay varias y ninguna es exacta, las muestra para elegir.
+//  · Enter en Cantidad pasa a Precio, que ya trae el de lista seleccionado: se teclea encima sin borrar.
+//  · Enter en Precio agrega al ticket. Sin JavaScript, el formulario funciona como antes.
 (() => {
   const f = document.querySelector("form.captura");
   const c = document.getElementById("codigo");
@@ -82,7 +84,9 @@ document.addEventListener("keydown", (e) => {
   const cant = document.getElementById("captura-cantidad");
   const precio = document.getElementById("captura-precio");
   const CANTIDAD = /^\s*(\d+(?:\.\d+)?)\s*\*\s*/; // «4*GP-37»
-  let items = [], activo = -1, pedido = null, espera = null;
+  const norm = (t) => t.replace(/[^a-z0-9]/gi, "").toUpperCase();
+  const texto = () => c.value.replace(CANTIDAD, "").trim();
+  let items = [], itemsDe = null, activo = -1, pedido = null, espera = null, elegido = "";
 
   const cerrar = () => {
     caja.hidden = true;
@@ -109,14 +113,15 @@ document.addEventListener("keydown", (e) => {
     mk.textContent = m[0];
     el.append(codigo.slice(0, m.index), mk, codigo.slice(m.index + m[0].length));
   };
-  const nodo = (tag, clase, texto) => {
+  const nodo = (tag, clase, txt) => {
     const el = document.createElement(tag);
     if (clase) el.className = clase;
-    if (texto !== undefined) el.textContent = texto;
+    if (txt !== undefined) el.textContent = txt;
     return el;
   };
   const pintar = (q, lista) => {
     items = lista;
+    itemsDe = q;
     caja.replaceChildren();
     lista.forEach((s, i) => {
       const el = nodo("div", "sugerencia");
@@ -133,60 +138,113 @@ document.addEventListener("keydown", (e) => {
       caja.append(el);
     });
     caja.append(nodo("div", "sugerencias-nota", lista.length
-      ? "↑ ↓ y Enter para elegir · Esc cierra · Enter sin elegir busca lo tecleado"
-      : "Sin sugerencias. Enter busca de todos modos (también por equivalencia)."));
+      ? "Enter elige la marcada · ↑ ↓ para cambiar · Esc cierra"
+      : `Sin coincidencias para «${q}». Revisa el código o prueba con parte del nombre.`));
     caja.hidden = false;
     c.setAttribute("aria-expanded", "true");
-    marcar(-1);
+    marcar(lista.length ? 0 : -1); // la primera ya va marcada: Enter la elige
   };
   const elegir = (i) => {
     const s = items[i];
     if (!s) return;
     const m = c.value.match(CANTIDAD);
     if (m) cant.value = m[1];
-    c.value = s.codigo;
+    c.value = elegido = s.codigo;
     clave.value = s.clave;
     precio.value = s.precio;
     precio.dataset.auto = s.precio; // si no lo cambian, se cobra el de la lista
+    precio.placeholder = s.precio ? "De lista" : "Sin precio: tecléalo";
     cerrar();
     cant.focus();
-    cant.select();
   };
-  const buscar = async () => {
-    const q = c.value.replace(CANTIDAD, "").trim();
-    if (q.replace(/[^a-z0-9]/gi, "").length < 2) { cerrar(); return; }
+  const traer = async (q) => {
     pedido?.abort();
     pedido = new AbortController();
+    const r = await fetch(`${f.dataset.sugerir}?q=${encodeURIComponent(q)}`,
+                          { signal: pedido.signal, headers: { Accept: "application/json" } });
+    if (!r.ok) throw new Error(r.status);
+    return (await r.json()).sugerencias;
+  };
+  const sugerir = async () => {
+    const q = texto();
+    if (norm(q).length < 2) { cerrar(); return; }
     try {
-      const r = await fetch(`${f.dataset.sugerir}?q=${encodeURIComponent(q)}`,
-                            { signal: pedido.signal, headers: { Accept: "application/json" } });
-      if (!r.ok) return;
-      const d = await r.json();
-      if (document.activeElement === c && c.value.replace(CANTIDAD, "").trim() === q) pintar(q, d.sugerencias);
-    } catch { /* se canceló o no hubo red: el Enter sigue funcionando sin sugerencias */ }
+      const lista = await traer(q);
+      if (document.activeElement === c && texto() === q) pintar(q, lista);
+    } catch { /* se canceló o no hubo red */ }
+  };
+  // Enter en Código: elige y pasa a Cantidad; nunca agrega directo
+  const enterEnCodigo = async () => {
+    const q = texto();
+    if (!norm(q)) return;
+    if (clave.value && c.value === elegido) { cant.focus(); return; }
+    if (!caja.hidden && itemsDe === q && activo >= 0) { elegir(activo); return; }
+    clearTimeout(espera);
+    let lista;
+    try {
+      lista = await traer(q);
+    } catch {
+      f.submit(); // sin sugerencias (red): que lo resuelva el servidor
+      return;
+    }
+    if (texto() !== q) return;
+    items = lista;
+    const exacto = lista.findIndex((s) => norm(s.codigo) === norm(q));
+    if (exacto >= 0) elegir(exacto);
+    else if (lista.length === 1) elegir(0);
+    else pintar(q, lista);
   };
   const soltarPrecioAuto = () => {
     if (precio.dataset.auto !== undefined && precio.value === precio.dataset.auto) precio.value = "";
     delete precio.dataset.auto;
+    precio.placeholder = "De lista";
   };
+  const nadaElegido = () => !clave.value && !norm(texto());
 
   c.addEventListener("input", () => {
     clave.value = "";
+    elegido = "";
     soltarPrecioAuto();
     clearTimeout(espera);
-    espera = setTimeout(buscar, 140);
+    espera = setTimeout(sugerir, 140);
   });
   c.addEventListener("keydown", (e) => {
     if (e.key === "Escape") { cerrar(); return; }
+    if (e.key === "Enter") { e.preventDefault(); enterEnCodigo(); return; }
     if (caja.hidden || !items.length) return;
     if (e.key === "ArrowDown") { e.preventDefault(); marcar((activo + 1) % items.length); }
     else if (e.key === "ArrowUp") { e.preventDefault(); marcar(activo <= 0 ? items.length - 1 : activo - 1); }
-    else if (e.key === "Enter" && activo >= 0) { e.preventDefault(); elegir(activo); }
   });
   c.addEventListener("blur", () => setTimeout(cerrar, 150));
+  cant.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    if (nadaElegido()) { c.focus(); return; }
+    precio.focus();
+  });
+  precio.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    if (nadaElegido()) { c.focus(); return; }
+    f.requestSubmit ? f.requestSubmit() : f.submit();
+  });
+  // Cantidad y Precio se seleccionan completos al entrar: se teclea encima, sin borrar
+  [cant, precio].forEach((el) => {
+    let recien = false;
+    el.addEventListener("focus", () => { el.select(); recien = true; });
+    el.addEventListener("mouseup", (e) => { if (recien) { e.preventDefault(); recien = false; } });
+    el.addEventListener("blur", () => { recien = false; });
+  });
   f.addEventListener("submit", () => {
     clearTimeout(espera);
     pedido?.abort();
     if (precio.dataset.auto !== undefined && precio.value === precio.dataset.auto) precio.value = "";
   });
+})();
+
+// Lo recién agregado o cambiado, a la vista dentro del ticket
+(() => {
+  const lineas = document.querySelector(".ticket-lineas");
+  const r = lineas && lineas.querySelector(".renglon.reciente");
+  if (r && lineas.scrollHeight > lineas.clientHeight) lineas.scrollTop = Math.max(0, r.offsetTop - lineas.offsetTop - 44); // deja ver el título de su sección
 })();

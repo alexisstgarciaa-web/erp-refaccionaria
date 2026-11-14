@@ -13,12 +13,15 @@
     <noscript><button class="btn-sec" type="submit">Cambiar</button></noscript>
   </form>
 
-  {% if not lineas %}<p class="ticket-vacio">Todavía no hay piezas. Toca una opción o «Llevar completa» en una afinación.</p>{% endif %}
-  {% for ln in lineas %}{% if not ln.sobre_pedido %}{% include "ventas/_renglon.html" %}{% endif %}{% endfor %}
+  {% if not lineas %}<p class="ticket-vacio">Todavía no hay piezas. Teclea un código arriba, toca una opción o «Llevar completa» en una afinación.</p>
+  {% else %}<p class="ticket-orden">Lo último que agregas sale arriba</p>{% endif %}
+  <div class="ticket-lineas">
+  {% for ln in lineas reversed %}{% if not ln.sobre_pedido %}{% include "ventas/_renglon.html" %}{% endif %}{% endfor %}
 
   {% if pedido_total %}
     <h3 class="ticket-pedido">Sobre pedido · se cobra al entregar</h3>
-    {% for ln in lineas %}{% if ln.sobre_pedido %}{% include "ventas/_renglon.html" %}{% endif %}{% endfor %}
+    {% for ln in lineas reversed %}{% if ln.sobre_pedido %}{% include "ventas/_renglon.html" %}{% endif %}{% endfor %}
     <p class="ticket-nota">Al cobrar queda la orden al proveedor en borrador.</p>
   {% endif %}
+  </div>
 </aside>

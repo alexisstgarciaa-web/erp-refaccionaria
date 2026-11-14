@@ -238,7 +238,8 @@ class Ticket:
         self.guardar()
 
     def agregar(self, clave, pos=None, cantidad=None, nivel="", precio=None):
-        """precio: con IVA por unidad, cuando en mostrador se teclea uno distinto al de la lista."""
+        """precio: con IVA por unidad, cuando en mostrador se teclea uno distinto al de la lista.
+        Devuelve el número de renglón que quedó con la pieza (para resaltarlo en el ticket)."""
         resolver(clave)  # valida que exista
         p = POR_CLAVE.get(pos)
         cantidad = str(cantidad or (p.cantidad if p else 1))
@@ -256,6 +257,11 @@ class Ticket:
             lineas.append(nueva)
         self.datos["lineas"] = lineas
         self.guardar()
+        return lineas.index(suelta) if suelta else len(lineas) - 1
+
+    def indice(self, clave, pos=""):
+        return next((i for i, ln in enumerate(self.datos["lineas"]) if ln["clave"] == clave and ln["pos"] == (pos or "")),
+                    None)
 
     def quitar(self, i):
         if 0 <= i < len(self.datos["lineas"]):
@@ -423,8 +429,8 @@ def _por_descripcion(partidas, palabras):
 
 
 def sugerir(texto, lista, limite=8):
-    """Sugerencias mientras se teclea en el campo de código: primero los códigos que empiezan con lo
-    escrito, luego los que lo contienen, luego equivalencias y al final por nombre, marca o aplicación.
+    """Sugerencias mientras se teclea en el campo de código: primero el código exacto, luego los que
+    empiezan con lo escrito, luego los que lo contienen, luego equivalencias y al final por nombre, marca o aplicación.
     Mis productos van antes que la lista del proveedor."""
     limpio = re.sub(r"[^A-Z0-9]", "", (texto or "").upper())
     if len(limpio) < 2:
@@ -445,7 +451,8 @@ def sugerir(texto, lista, limite=8):
                 res.append(encontrado(obj, lista, equivalencia))
 
     cuerpo = _SEPARADORES.join(map(re.escape, limpio))
-    for patron in ("^" + _SEPARADORES + cuerpo, cuerpo):  # empieza con, luego contiene
+    exacto = "^" + _SEPARADORES + cuerpo + _SEPARADORES + "$"
+    for patron in (exacto, "^" + _SEPARADORES + cuerpo, cuerpo):  # el código exacto, empieza con, contiene
         q = Q(sku__iregex=patron) | Q(numero_parte__iregex=patron) | Q(codigo_barras__iregex=patron)
         sumar(activos.filter(q).order_by("sku")[:limite])
         sumar(partidas.filter(codigo__iregex=patron).order_by("codigo")[:limite])

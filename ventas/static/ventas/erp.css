@@ -234,6 +234,15 @@ option, optgroup { background: var(--fondo); color: var(--texto); }
 .ticket-pedido { margin: 14px 0 0; padding-top: 12px; border-top: 1px dashed var(--borde); font: 700 12px var(--f-texto);
   letter-spacing: .06em; text-transform: uppercase; color: var(--pedido); }
 .ticket-nota { margin: 4px 0 12px; font-size: 12px; color: var(--texto-3); }
+.ticket-orden { margin: 12px 0 0; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--texto-3); }
+/* Las piezas se desplazan dentro del ticket: cabeza y cliente quedan a la vista */
+.ticket-lineas { max-height: calc(100vh - 340px); min-height: 150px; overflow-y: auto; overscroll-behavior: contain; margin: 6px -18px 0; padding: 0 18px;
+  border-top: 1px solid var(--borde-2); }
+.renglon.reciente { margin: 0 -18px; padding: 12px 18px 12px 14px; border-left: 4px solid var(--hay);
+  background: color-mix(in srgb, var(--hay) 8%, #fff); animation: renglon-recien 2.4s ease-out; }
+@keyframes renglon-recien { from { background: color-mix(in srgb, var(--hay) 32%, #fff); } }
+.renglon-nuevo { display: inline-block; margin-left: 6px; padding: 2px 6px; vertical-align: 2px; font: italic 700 10px var(--f-texto);
+  letter-spacing: .05em; text-transform: uppercase; color: #fff; background: var(--hay); }
 .renglon { padding: 12px 0; border-bottom: 1px solid var(--borde-2); }
 .renglon:last-of-type { border-bottom: 0; }
 .renglon-linea { display: flex; justify-content: space-between; gap: 10px; }
@@ -325,6 +334,15 @@ body.con-cobro .pie-sitio { display: none; }
 .sugerencia .opcion-precio { font-size: 17px; text-align: right; }
 .sugerencias-nota { padding: 9px 14px; font-size: 12px; color: var(--texto-3); background: var(--superficie-2); }
 .captura-ayuda { grid-column: 1 / -1; margin: 2px 0 0; font-size: 12px; color: var(--barra-texto-2); }
+.captura-hecho { grid-column: 1 / -1; margin: 6px 0 2px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 10px 14px;
+  background: var(--superficie); color: var(--texto); border-left: 6px solid var(--hay); animation: captura-hecho .45s ease-out; }
+@keyframes captura-hecho { from { opacity: 0; transform: translateY(-6px); } }
+.captura-hecho-ok { font: italic 800 14px var(--f-titulo); font-stretch: 115%; text-transform: uppercase; color: var(--hay); }
+.captura-hecho-pieza { min-width: 0; font-size: 15px; color: var(--texto-2); }
+.captura-hecho-pieza b { font: 600 16px var(--f-mono); color: var(--texto); }
+.captura-hecho-cuenta { margin-left: auto; font-size: 15px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.captura-hecho-cuenta b { font: italic 800 20px var(--f-titulo); font-stretch: 110%; }
+.captura-hecho-cuenta i { font-size: 11px; font-weight: 700; font-style: normal; text-transform: uppercase; color: var(--primario); }
 .captura-ayuda b { color: #fff; }
 
 .recien { margin-top: 14px; padding: 14px 22px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
@@ -470,6 +488,7 @@ body.doc { background: #D9D9D4; padding-bottom: 40px; }
   .buscador { padding-left: 0; border-left: 0; }
   .mesa { grid-template-columns: 1fr; }
   .ticket { position: static; }
+  .ticket-lineas { max-height: none; min-height: 0; overflow: visible; }
   .barra-cobro .dentro { grid-template-columns: auto 1fr; gap: 10px 20px; padding-block: 12px; }
   .cobro-resumen { display: none; }
   .cobro-total { text-align: left; }
@@ -515,4 +534,8 @@ body.doc { background: #D9D9D4; padding-bottom: 40px; }
   .pagos label { flex: 1; }
   .pagos span { padding: 0 6px; height: 38px; line-height: 38px; text-align: center; font-size: 13px; }
   .cobrar { height: 52px; min-width: 0; font-size: 16px; padding: 0 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .renglon.reciente, .captura-hecho { animation: none; }
 }

@@ -158,9 +158,18 @@ class MostradorTests(TestCase):
         self.assertRedirects(r, "/", fetch_redirect_response=False)
         self.assertEqual(self.client.session["ticket"]["lineas"],
                          [{"clave": f"producto:{self.fram.pk}", "pos": "", "cantidad": "1", "nivel": ""}])
+        # se confirma en la franja de captura y el renglón sale resaltado; al recargar ya no
+        r = self.client.get("/")
+        self.assertContains(r, 'class="captura-hecho"')
+        self.assertContains(r, "1 × $98 = <b>$98</b>")
+        self.assertContains(r, '<span class="renglon-nuevo">Agregado</span>')
+        self.assertNotContains(self.client.get("/"), 'class="captura-hecho"')
         # el mismo código otra vez suma a su renglón; «2*» es la cantidad
         self.client.post(reverse("ticket_codigo"), {"codigo": "2*PH966B"})
         self.assertEqual(self.client.session["ticket"]["lineas"][0]["cantidad"], "3")
+        self.assertContains(self.client.get("/"), "+2, ya van 3 × $98 = <b>$294</b>")
+        self.client.post(reverse("ticket_cantidad", args=[0]), {"cantidad": "4"})
+        self.assertContains(self.client.get("/"), '<span class="renglon-nuevo">Cambió</span>')
         # un código que solo está en la lista del proveedor entra sobre pedido
         self.client.post(reverse("ticket_codigo"), {"codigo": "GP37"})
         gp = PartidaListaProveedor.objects.get(codigo="GP-37")
@@ -185,6 +194,10 @@ class MostradorTests(TestCase):
         self.assertEqual(d[0]["codigo"], "PH966B")  # mi producto, con existencia y precio de lista
         self.assertEqual((d[0]["clave"], d[0]["hay"], d[0]["precio"], d[0]["precio_txt"]),
                          (f"producto:{self.fram.pk}", True, "98", "$98"))
+        # el código exacto va primero aunque haya otros que empiezan igual
+        PartidaListaProveedor.objects.filter(codigo="15208-H8916").update(codigo="PH966B-X")
+        d = self.client.get(url, {"q": "ph966b"}).json()["sugerencias"]
+        self.assertEqual([s["codigo"] for s in d][:2], ["PH966B", "PH966B-X"])
         d = self.client.get(url, {"q": "gp 3"}).json()["sugerencias"]  # sin guion y con espacio
         self.assertEqual([s["codigo"] for s in d], ["GP-37"])
         self.assertFalse(d[0]["hay"])
