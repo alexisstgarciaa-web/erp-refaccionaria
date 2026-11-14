@@ -101,7 +101,9 @@
 </section>
 {% endif %}
 
-<div class="mesa">
+{# Sin vehículo elegido, el ticket ocupa todo el ancho; con vehículo, la hoja de piezas va a un lado #}
+<div class="mesa{% if paso != 'ficha' and not por_codigo %} sin-ficha{% endif %}">
+{% if paso == 'ficha' or por_codigo %}
 <section class="centro ficha">
 
 {% if por_codigo %}
@@ -211,22 +213,10 @@
   {% endfor %}
   <p class="nota">Toca una opción para llevarla al ticket. Tus productos van primero según su nivel; donde no tienes, se llena con la lista del proveedor, de la más barata (Económico) a la más cara (Premium). Lo que va <b>sobre pedido</b> se cotiza a costo + {{ sobreprecio }}% + IVA y se cobra al entregar.</p>
 
-{% else %}
-  <div class="guia">
-    <ol class="pasos" aria-label="Pasos">
-      {% for clave, nombre in "marca:Marca,anio:Año,modelo:Modelo,motor:Motor"|pasos:paso %}<li class="{{ clave }}">{{ nombre }}</li>{% endfor %}
-    </ol>
-    <h1>
-      {% if paso == 'marca' %}¿Qué vehículo trae el cliente?
-      {% elif paso == 'anio' %}{{ sel.armadora }}: ¿de qué año?
-      {% elif paso == 'modelo' %}{{ sel.armadora }} {{ sel.anio }}: ¿qué modelo?
-      {% else %}{{ sel.armadora }} {{ sel.modelo }} {{ sel.anio }}: ¿qué motor trae?{% endif %}
-    </h1>
-    <p>{% if paso == 'motor' %}Si el cliente no sabe, elige «Todos los motores» y salen las piezas de cada uno.{% else %}Elige en las listas de arriba o escribe el vehículo en el buscador, por ejemplo «tsuru 2003».{% endif %}</p>
-  </div>
 {% endif %}
 
 </section>
+{% endif %}
 {% include "ventas/_ticket.html" %}
 </div>
 {% endblock %}

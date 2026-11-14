@@ -7,14 +7,15 @@
   <form method="post" action="{% url 'ticket_cliente' %}" class="ticket-cliente">{% csrf_token %}
     <input type="hidden" name="next" value="{{ aqui }}">
     <label for="cliente">Cliente <small>lista {{ cliente.lista_precio }}</small></label>
-    <select id="cliente" name="cliente" onchange="this.form.submit()">
+    <select id="cliente" name="cliente" onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()">
       {% for c in clientes %}<option value="{{ c.pk }}"{% if c.pk == cliente.pk %} selected{% endif %}>{{ c }}{% if c.dias_credito %} · crédito {{ c.dias_credito }} días{% endif %}</option>{% endfor %}
     </select>
     <noscript><button class="btn-sec" type="submit">Cambiar</button></noscript>
   </form>
 
   {% if not lineas %}<p class="ticket-vacio">Todavía no hay piezas. Teclea un código arriba, toca una opción o «Llevar completa» en una afinación.</p>
-  {% else %}<p class="ticket-orden">Lo último que agregas sale arriba</p>{% endif %}
+  {% else %}<p class="ticket-orden">Lo último que agregas sale arriba</p>
+  <div class="ticket-columnas" aria-hidden="true"><span>Código</span><span>Descripción</span><span>Cantidad y precio c/u con IVA</span><span>Importe</span></div>{% endif %}
   <div class="ticket-lineas">
   {% for ln in lineas reversed %}{% if not ln.sobre_pedido %}{% include "ventas/_renglon.html" %}{% endif %}{% endfor %}
 

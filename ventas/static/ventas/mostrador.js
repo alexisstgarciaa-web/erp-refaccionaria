@@ -243,8 +243,82 @@ document.addEventListener("keydown", (e) => {
 })();
 
 // Lo recién agregado o cambiado, a la vista dentro del ticket
-(() => {
+const verReciente = () => {
   const lineas = document.querySelector(".ticket-lineas");
   const r = lineas && lineas.querySelector(".renglon.reciente");
   if (r && lineas.scrollHeight > lineas.clientHeight) lineas.scrollTop = Math.max(0, r.offsetTop - lineas.offsetTop - 44); // deja ver el título de su sección
+};
+verReciente();
+
+// Cambios en el ticket (cantidad, precio, quitar, cliente) y en la hoja de piezas (opciones, «Llevar
+// completa») sin recargar la página: se manda el formulario por detrás y se cambian solo la mesa y la
+// barra de cobro, así la pantalla se queda donde estaba. Sin JavaScript, el formulario recarga como antes.
+(() => {
+  if (!window.fetch || !window.DOMParser) return;
+  const aplica = (f) => f instanceof HTMLFormElement && f.method.toLowerCase() === "post" &&
+                        f.closest(".mesa") && !f.closest(".por-codigo");
+  let cola = Promise.resolve(); // uno tras otro, en el orden en que se hicieron
+
+  const enviar = async (f, datos) => {
+    const mesa = document.querySelector(".mesa");
+    if (!mesa) return;
+    const abiertos = [...mesa.querySelectorAll("details")].map((d) => d.open);
+    const lineas = mesa.querySelector(".ticket-lineas");
+    const scroll = lineas ? lineas.scrollTop : 0;
+    mesa.classList.add("guardando");
+    let r, html;
+    try {
+      r = await fetch(f.action, { method: "POST", body: datos, credentials: "same-origin" });
+      html = await r.text();
+    } catch {
+      f.submit();
+      return;
+    }
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const nueva = doc.querySelector(".mesa");
+    if (!r.ok || !nueva) { // sesión vencida u otro error: que lo muestre la página completa
+      window.location.assign(r.ok ? r.url : window.location.href);
+      return;
+    }
+    // los avisos (p. ej. precio abajo del costo) van dentro del ticket, que es donde se está viendo
+    const avisos = [...doc.querySelectorAll(".avisos .aviso")];
+    const cabeza = nueva.querySelector(".ticket-cabeza");
+    if (avisos.length && cabeza) {
+      const caja = document.createElement("div");
+      caja.className = "ticket-avisos";
+      caja.setAttribute("role", "status");
+      caja.append(...avisos);
+      cabeza.after(caja);
+    }
+    document.querySelector(".avisos")?.remove(); // los de antes ya no aplican
+    document.querySelector(".captura-hecho")?.remove();
+    // dónde estaba el cursor justo ahora (y lo que se haya alcanzado a teclear mientras se guardaba)
+    const a = document.activeElement;
+    const foco = a && mesa.contains(a) && a.form && a.name
+      ? { action: a.form.getAttribute("action"), name: a.name, valor: a.value, tecleado: a.value !== a.defaultValue } : null;
+    mesa.replaceWith(nueva);
+    const cobro = doc.querySelector(".barra-cobro");
+    if (cobro) document.querySelector(".barra-cobro")?.replaceWith(cobro);
+    nueva.querySelectorAll("details").forEach((d, i) => { if (abiertos[i]) d.open = true; });
+    const nuevasLineas = nueva.querySelector(".ticket-lineas");
+    if (nuevasLineas) nuevasLineas.scrollTop = scroll;
+    verReciente();
+    if (foco) {
+      const el = nueva.querySelector(`form[action="${CSS.escape(foco.action)}"] [name="${CSS.escape(foco.name)}"]`);
+      if (el) {
+        if (foco.tecleado && "value" in el) el.value = foco.valor;
+        el.focus({ preventScroll: true });
+        if (!foco.tecleado && el.select) el.select();
+      }
+    }
+  };
+
+  document.addEventListener("submit", (e) => {
+    const f = e.target;
+    if (!aplica(f)) return;
+    e.preventDefault();
+    const datos = new FormData(f);
+    if (e.submitter && e.submitter.name) datos.append(e.submitter.name, e.submitter.value);
+    cola = cola.then(() => enviar(f, datos)).catch(() => {});
+  });
 })();

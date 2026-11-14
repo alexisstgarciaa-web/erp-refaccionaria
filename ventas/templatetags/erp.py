@@ -26,17 +26,3 @@ def cant(valor):
 @register.filter
 def por(a, b):
     return Decimal(a or 0) * Decimal(b or 0)
-
-
-@register.filter
-def pasos(definicion, actual):
-    """'marca:Marca,anio:Año' + 'anio' → [('hecho', 'Marca'), ('actual', 'Año')] para la guía de pasos."""
-    res, visto = [], False
-    for parte in definicion.split(","):
-        clave, nombre = parte.split(":")
-        if clave == actual:
-            res.append(("actual", nombre))
-            visto = True
-        else:
-            res.append(("" if visto else "hecho", nombre))
-    return res
