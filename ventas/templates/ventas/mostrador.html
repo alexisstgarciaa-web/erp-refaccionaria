@@ -51,9 +51,11 @@
     </div>
   </form>
 
-  {% if recientes %}
-  <div class="recientes"><span>Recientes</span>
-    {% for r in recientes %}<a class="chip" href="{{ r.url }}">{{ r.armadora }} {{ r.modelo }} {{ r.anio }}{% if r.litros and r.litros != 'todos' %} · {{ r.litros }} L{% endif %}</a>{% endfor %}
+  {% if recientes or sel.armadora %}
+  <div class="recientes">
+    {% if recientes %}<span>Recientes</span>
+    {% for r in recientes %}<a class="chip" href="{{ r.url }}">{{ r.armadora }} {{ r.modelo }} {{ r.anio }}{% if r.litros and r.litros != 'todos' %} · {{ r.litros }} L{% endif %}</a>{% endfor %}{% endif %}
+    {% if sel.armadora %}<a class="limpiar" href="{% url 'mostrador' %}" title="Borra marca, año, modelo y motor para elegir otro vehículo. El ticket se queda.">✕ Limpiar vehículo</a>{% endif %}
   </div>
   {% endif %}
 </section>
@@ -137,7 +139,7 @@
   <header class="vehiculo-titulo">
     <p class="antetitulo">Afinación para</p>
     <h1>{{ veh.armadora }} {{ veh.modelo }} <span>{{ veh.anio }}</span></h1>
-    <p class="detalle">{% if veh.litros %}Motor {{ veh.litros }} L{% else %}Todos los motores{% endif %} · primero tus productos, luego la lista del proveedor</p>
+    <p class="detalle">{% if veh.litros %}Motor {{ veh.litros }} L{% else %}Todos los motores{% endif %} · primero tus productos, luego la lista del proveedor · <a href="{% url 'mostrador' %}">Cambiar vehículo</a></p>
   </header>
 
   <section class="paquetes" aria-label="Afinación completa por nivel">

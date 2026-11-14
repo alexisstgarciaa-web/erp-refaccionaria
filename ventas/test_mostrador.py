@@ -57,6 +57,10 @@ class MostradorTests(TestCase):
         self.assertContains(r, "Total a cobrar")
         # el vehículo queda en recientes
         self.assertEqual(self.client.session["recientes"][0]["modelo"], "Tsuru")
+        # con vehículo elegido hay cómo limpiarlo; sin vehículo, no
+        self.assertContains(r, f'<a class="limpiar" href="{reverse("mostrador")}"')
+        self.assertContains(r, "Cambiar vehículo")
+        self.assertNotContains(self.client.get(reverse("mostrador")), 'class="limpiar"')
 
     def test_listas_marca_anio_modelo_motor(self):
         r = self.client.get(reverse("mostrador"))

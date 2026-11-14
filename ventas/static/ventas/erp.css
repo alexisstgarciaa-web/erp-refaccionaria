@@ -112,7 +112,10 @@ option, optgroup { background: var(--fondo); color: var(--texto); }
 /* ───────── Vehículo: cuatro listas + buscador ───────── */
 .vehiculo-panel { margin-top: 24px; padding: 20px 22px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 330px);
   gap: 18px 28px; align-items: end; }
-.selector { display: grid; grid-template-columns: 1.25fr .8fr 1.25fr .95fr auto; gap: 12px; align-items: end; margin: 0; }
+.selector { display: grid; grid-template-columns: 1.15fr .7fr 1.1fr 1.3fr auto; gap: 12px; align-items: end; margin: 0; }
+.limpiar { margin-left: auto; display: inline-flex; align-items: center; height: 34px; padding: 0 14px; white-space: nowrap; text-decoration: none;
+  border: 1px solid var(--texto); background: var(--superficie); color: var(--texto); font: 600 13px var(--f-texto); }
+.limpiar:hover { background: var(--texto); color: #fff; }
 .lista { position: relative; display: block; }
 .lista > span, .buscador label { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 600; letter-spacing: .06em;
   text-transform: uppercase; color: var(--texto-3); }
