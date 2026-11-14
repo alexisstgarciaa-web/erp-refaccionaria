@@ -1,7 +1,7 @@
 {% load erp %}
 <div class="renglon{% if ln.sobre_pedido %} pedido{% endif %}">
   <div class="renglon-linea"><b>{{ ln.opcion.codigo }}</b><span class="renglon-importe">{{ ln.importe|pesos|default:"sin precio" }}</span></div>
-  <div class="renglon-detalle">{% if ln.pos %}{{ ln.pos.nombre }} · {% endif %}{{ ln.opcion.marca }} · {{ ln.opcion.precio|pesos }} c/u{% if ln.sobre_pedido and ln.opcion.existencia %} · hay {{ ln.opcion.existencia|cant }}{% endif %}</div>
+  <div class="renglon-detalle">{% if ln.pos %}{{ ln.pos.nombre }}{% else %}{% filter truncatechars:38 %}{% firstof ln.objeto.nombre ln.objeto.descripcion %}{% endfilter %}{% endif %} · {{ ln.opcion.marca }} · {{ ln.opcion.precio|pesos }} c/u{% if ln.sobre_pedido and ln.opcion.existencia %} · hay {{ ln.opcion.existencia|cant }}{% endif %}</div>
   <div class="renglon-acciones">
     <form method="post" action="{% url 'ticket_cantidad' ln.i %}">{% csrf_token %}
       <input type="hidden" name="next" value="{{ aqui }}">

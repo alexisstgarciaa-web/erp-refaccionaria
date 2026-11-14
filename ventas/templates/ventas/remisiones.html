@@ -1,0 +1,36 @@
+{% extends "ventas/base.html" %}
+{% load erp %}
+{% block titulo %}Remisiones{% endblock %}
+{% block contenido %}
+<header class="pagina-titulo">
+  <h1>Remisiones</h1>
+  <p>Busca una venta por folio o por cliente para ver o reimprimir su remisión.</p>
+</header>
+<form class="panel bloque buscar-remision" method="get" role="search">
+  <label class="campo">Folio o cliente <input name="q" value="{{ q }}" placeholder="VTA-000012, Taller Ramírez" autofocus></label>
+  <button class="btn" type="submit">Buscar</button>
+</form>
+<section class="panel bloque">
+  <table class="tabla">
+    <thead><tr><th>Folio</th><th>Fecha</th><th>Cliente</th><th>Pago</th><th>Estado</th><th class="num">Total</th><th></th></tr></thead>
+    <tbody>
+      {% for v in ventas %}
+      <tr>
+        <td><b>{{ v.folio }}</b></td>
+        <td>{{ v.fecha|date:"j M Y, H:i" }}</td>
+        <td>{{ v.cliente }}</td>
+        <td>{{ v.get_forma_pago_display }}</td>
+        <td>{% if v.estado == 'CANCELADA' %}<span class="rojo">Cancelada</span>{% elif v.estado == 'CREDITO' %}Crédito · debe {{ v.saldo|pesos }}{% else %}Pagada{% endif %}</td>
+        <td class="num">{{ v.total|pesos }}</td>
+        <td class="num acciones-remision">
+          <a href="{% url 'remision' v.folio %}" target="_blank" rel="noopener">Carta</a>
+          <a href="{% url 'remision' v.folio %}?formato=ticket" target="_blank" rel="noopener">Ticket</a>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="7" style="color: var(--texto-3)">{% if q %}No hay ventas con «{{ q }}».{% else %}Todavía no hay ventas.{% endif %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

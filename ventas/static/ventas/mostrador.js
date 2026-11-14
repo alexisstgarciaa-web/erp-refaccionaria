@@ -62,3 +62,10 @@
   });
   marcarSiguiente();
 })();
+
+// F2 regresa al campo de código desde cualquier parte del mostrador (lectores de código de barras incluidos).
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "F2") return;
+  const c = document.getElementById("codigo");
+  if (c) { e.preventDefault(); c.focus(); c.select(); }
+});

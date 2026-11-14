@@ -151,3 +151,58 @@ class MostradorTests(TestCase):
         lineas = self.client.session["ticket"]["lineas"]
         self.assertEqual(len(lineas), 3)
         self.assertEqual({ln["pos"]: ln["nivel"] for ln in lineas}["aceite"], "PRE")
+
+    def test_captura_por_codigo(self):
+        # sin guiones ni mayúsculas: es mi producto PH966B, entra directo
+        r = self.client.post(reverse("ticket_codigo"), {"codigo": "ph-966b", "cantidad": "1", "next": "/"})
+        self.assertRedirects(r, "/", fetch_redirect_response=False)
+        self.assertEqual(self.client.session["ticket"]["lineas"],
+                         [{"clave": f"producto:{self.fram.pk}", "pos": "", "cantidad": "1", "nivel": ""}])
+        # el mismo código otra vez suma a su renglón; «2*» es la cantidad
+        self.client.post(reverse("ticket_codigo"), {"codigo": "2*PH966B"})
+        self.assertEqual(self.client.session["ticket"]["lineas"][0]["cantidad"], "3")
+        # un código que solo está en la lista del proveedor entra sobre pedido
+        self.client.post(reverse("ticket_codigo"), {"codigo": "GP37"})
+        gp = PartidaListaProveedor.objects.get(codigo="GP-37")
+        self.assertEqual(self.client.session["ticket"]["lineas"][1]["clave"], f"partida:{gp.pk}")
+        # varias coincidencias por nombre: se muestran para elegir, con la cantidad
+        r = self.client.post(reverse("ticket_codigo"), {"codigo": "filtro aceite", "cantidad": "2",
+                                                        "next": "/?armadora=Nissan"})
+        self.assertEqual(r["Location"], "/?armadora=Nissan&codigo=filtro+aceite&cantidad=2")
+        r = self.client.get(r["Location"])
+        self.assertContains(r, "Elige: «filtro aceite»")
+        self.assertContains(r, "AP-FAC3682")
+        self.assertNotContains(r, "CA6900")
+        self.assertEqual(r.context["aqui"], "/?armadora=Nissan")  # al elegir no repite la búsqueda
+        # lo que no existe avisa y no agrega nada
+        r = self.client.post(reverse("ticket_codigo"), {"codigo": "ZZZ-999"}, follow=True)
+        self.assertContains(r, "No encontré «ZZZ-999»")
+        self.assertEqual(len(self.client.session["ticket"]["lineas"]), 2)
+
+    def test_leer_captura(self):
+        self.assertEqual(m.leer_captura("4*PH966B"), ("PH966B", D("4")))
+        self.assertEqual(m.leer_captura("3 x GP-37"), ("GP-37", D("3")))
+        self.assertEqual(m.leer_captura("15208X123", "2"), ("15208X123", D("2")))  # la x pegada es parte del código
+        self.assertEqual(m.leer_captura("CA6900", ""), ("CA6900", D("1")))
+
+    def test_remision_de_la_venta(self):
+        self.client.post(reverse("caja"), {"accion": "abrir", "fondo": "500"})
+        base = {"anio": 2003, "armadora": "Nissan", "modelo": "Tsuru", "litros": "1.6"}
+        ca = f"partida:{PartidaListaProveedor.objects.get(codigo='CA6900').pk}"
+        self.client.post(reverse("ticket_agregar"), {"clave": f"producto:{self.fram.pk}", "pos": "aceite"})
+        self.client.post(reverse("ticket_agregar"), {"clave": ca, "pos": "aire"})
+        r = self.client.post(reverse("ticket_cobrar"), {"forma_pago": "EFECTIVO", **base}, follow=True)
+        venta = Venta.objects.get()
+        self.assertEqual(venta.vehiculo, "Nissan Tsuru 2003 · 1.6 L")
+        self.assertEqual([p["codigo"] for p in venta.pedido], ["CA6900"])
+        # al volver al mostrador se ofrece imprimir la remisión
+        self.assertContains(r, reverse("remision", args=[venta.folio]) + "?imprimir=1")
+        r = self.client.get(reverse("remision", args=[venta.folio]))
+        for texto in (venta.folio, "Remisión", "Nissan Tsuru 2003", "PH966B", "Quedó sobre pedido", "CA6900",
+                      "$98", "IVA 16%", "no es un comprobante fiscal", "Recibí de conformidad"):
+            self.assertContains(r, texto)
+        self.assertContains(self.client.get(reverse("remision", args=[venta.folio]), {"formato": "ticket"}), "doc-ticket")
+        # se encuentra en Remisiones por folio o por cliente
+        self.assertContains(self.client.get(reverse("remisiones"), {"q": "público"}), venta.folio)
+        self.assertNotContains(self.client.get(reverse("remisiones"), {"q": "nadie"}), venta.folio)
+        self.assertEqual(self.client.get(reverse("remision", args=["VTA-999999"])).status_code, 404)

@@ -153,6 +153,10 @@ LOGOUT_REDIRECT_URL = "entrar"
 
 # Nombre que aparece en la barra y en el ticket.
 NEGOCIO_NOMBRE = os.environ.get("NEGOCIO_NOMBRE", "Refaccionaria")
+# Datos que salen en la remisión (opcionales; se llenan en las variables de entorno de Render)
+NEGOCIO_RFC = os.environ.get("NEGOCIO_RFC", "")
+NEGOCIO_DIRECCION = os.environ.get("NEGOCIO_DIRECCION", "")
+NEGOCIO_TELEFONO = os.environ.get("NEGOCIO_TELEFONO", "")
 # Lo que no hay en anaquel y se ofrece de la lista del proveedor: costo × (1 + esto) + IVA.
 SOBREPRECIO_PEDIDO = os.environ.get("SOBREPRECIO_PEDIDO", "0.37")
 

@@ -11,13 +11,15 @@ from dataclasses import dataclass
 from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
+import re
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from catalogo.models import ListaPrecio, Precio, Producto
-import re
 
 from compras.aplicaciones import ARMADORAS, coincide
 from compras.listas import agregar_a_catalogo
@@ -236,7 +238,11 @@ class Ticket:
         cantidad = str(cantidad or (p.cantidad if p else 1))
         nivel = nivel if nivel in dict(NIVELES) else ""
         lineas = [ln for ln in self.datos["lineas"] if not (p and ln["pos"] == p.clave)]  # una opción por pieza
-        lineas.append({"clave": clave, "pos": p.clave if p else "", "cantidad": cantidad, "nivel": nivel})
+        suelta = next((ln for ln in lineas if not p and not ln["pos"] and ln["clave"] == clave), None)
+        if suelta:  # el mismo código tecleado otra vez suma a su renglón
+            suelta["cantidad"] = str(Decimal(suelta["cantidad"]) + Decimal(cantidad))
+        else:
+            lineas.append({"clave": clave, "pos": p.clave if p else "", "cantidad": cantidad, "nivel": nivel})
         self.datos["lineas"] = lineas
         self.guardar()
 
@@ -276,6 +282,99 @@ class Ticket:
 
     def por_posicion(self):
         return {ln["pos"]: ln for ln in self.datos["lineas"] if ln["pos"]}
+
+
+# ---------------------------------------------------------------------------------------------
+# Captura por código: SKU, número de parte, código de barras, código del proveedor o equivalencia
+# ---------------------------------------------------------------------------------------------
+
+_SEPARADORES = "[- ./]*"
+
+
+def _patron_codigo(texto):
+    """'ph-966b', 'PH 966B' y 'PH966B' son el mismo código: se comparan sin guiones, puntos ni espacios."""
+    limpio = re.sub(r"[^A-Z0-9]", "", (texto or "").upper())
+    if not limpio:
+        return None
+    return "^" + _SEPARADORES + _SEPARADORES.join(map(re.escape, limpio)) + _SEPARADORES + "$"
+
+
+@dataclass
+class Encontrado:
+    opcion: Opcion
+    nombre: str
+    por_equivalencia: bool = False
+
+
+def _encontrado(obj, lista, equivalencia=False):
+    if isinstance(obj, Producto):
+        return Encontrado(_de_producto(obj, lista, Vehiculo(0, "", ""), POSICIONES[-1]), obj.nombre, equivalencia)
+    return Encontrado(_de_partida(obj, Vehiculo(0, "", "")), obj.descripcion, equivalencia)
+
+
+def buscar_codigo(texto, lista, limite=20):
+    """Lo que el de mostrador teclea o escanea. Devuelve (encontrados, directo): directo es True cuando
+    el código es exactamente de una sola pieza, y entonces va derecho al ticket. Si no, se muestran
+    para elegir: varias piezas con el mismo código, sus equivalencias o, si no hubo código exacto,
+    lo que contiene el texto en nombre, marca, código o aplicación («anticongelante», «filtro aire jetta»)."""
+    patron = _patron_codigo(texto)
+    if not patron:
+        return [], False
+    activos = Producto.objects.filter(activo=True).select_related("marca", "unidad_base")
+    partidas = PartidaListaProveedor.objects.select_related("proveedor", "producto")
+
+    vistos, exactos = set(), []
+
+    def sumar(obj, destino, equivalencia=False):
+        if isinstance(obj, PartidaListaProveedor) and obj.producto_id and obj.producto.activo:
+            obj = obj.producto  # la partida ya es producto mío: se vende de mi catálogo
+        llave = (type(obj).__name__, obj.pk)
+        if llave not in vistos:
+            vistos.add(llave)
+            destino.append(_encontrado(obj, lista, equivalencia))
+
+    for p in activos.filter(Q(sku__iregex=patron) | Q(numero_parte__iregex=patron) | Q(codigo_barras__iregex=patron)):
+        sumar(p, exactos)
+    for p in partidas.filter(codigo__iregex=patron):
+        sumar(p, exactos)
+    if len(exactos) == 1:
+        return exactos, True
+
+    equivalentes = []
+    for p in activos.filter(grupo_equivalencia__referencias__numero_parte__iregex=patron).distinct():
+        sumar(p, equivalentes, True)
+    for p in partidas.filter(equivalencia__iregex=patron):
+        sumar(p, equivalentes, True)
+    encontrados = exactos + equivalentes
+    if encontrados:
+        return encontrados[:limite], False
+
+    # Sin código exacto: por texto, cada palabra en el nombre, la marca o el código
+    palabras = [w for w in texto.split() if len(w) >= 2]
+    q_prod, q_part = Q(), Q()
+    for w in palabras:
+        q_prod &= Q(nombre__icontains=w) | Q(sku__icontains=w) | Q(numero_parte__icontains=w) | Q(marca__nombre__icontains=w)
+        q_part &= (Q(descripcion__icontains=w) | Q(codigo__icontains=w) | Q(marca__icontains=w)
+                   | Q(aplicacion__icontains=w))  # «filtro aire jetta»: jetta viene en la aplicación
+    if palabras:
+        for p in activos.filter(q_prod).order_by("nombre")[:limite]:
+            sumar(p, encontrados)
+        for p in partidas.filter(q_part).order_by("codigo")[:limite]:
+            sumar(p, encontrados)
+    return encontrados[:limite], False
+
+
+def leer_captura(texto, cantidad=None):
+    """'4*PH966B' o '4 x PH966B' → ('PH966B', 4). Si no trae cantidad, usa la del campo (o 1)."""
+    m = (re.match(r"^\s*(\d+(?:\.\d+)?)\s*\*\s*(\S.*)$", texto or "")
+         or re.match(r"^\s*(\d+(?:\.\d+)?)\s+[xX]\s+(\S.*)$", texto or ""))
+    if m:  # «15208X123» es un código, no 15208 piezas: la x necesita espacios
+        return m.group(2).strip(), Decimal(m.group(1))
+    try:
+        c = Decimal(str(cantidad).strip()) if cantidad not in (None, "") else Decimal(1)
+    except Exception:
+        c = Decimal(1)
+    return (texto or "").strip(), c if c > 0 else Decimal(1)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -333,6 +432,16 @@ def cobrar(ticket, turno, forma_pago, usuario, veh=None):
     if vender:
         venta = registrar_venta(turno, cliente, [{"producto": ln.objeto, "cantidad": ln.cantidad} for ln in vender],
                                 forma_pago, usuario)
+        # para la remisión: qué vehículo se atendió y qué quedó sobre pedido
+        venta.vehiculo = str(veh) if veh else ""
+        venta.pedido = [{"codigo": ln.opcion.codigo,
+                         "descripcion": " · ".join(x for x in [
+                             ln.pos.nombre if ln.pos else (getattr(ln.objeto, "nombre", "")
+                                                           or getattr(ln.objeto, "descripcion", ""))[:60],
+                             ln.opcion.marca] if x),
+                         "cantidad": str(ln.cantidad), "precio": str(ln.opcion.precio or 0), "importe": str(ln.importe)}
+                        for ln in lineas if ln.sobre_pedido]
+        venta.save(update_fields=["vehiculo", "pedido"])
     ordenes = []
     for ln in (ln for ln in lineas if ln.sobre_pedido):
         producto, proveedor, costo = _producto_para_pedir(ln)

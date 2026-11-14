@@ -7,9 +7,12 @@ urlpatterns = [
     path("vehiculo/listas/", views.vehiculo_listas, name="vehiculo_listas"),
     path("ticket/agregar/", views.agregar, name="ticket_agregar"),
     path("ticket/afinacion/", views.agregar_afinacion, name="ticket_afinacion"),
+    path("ticket/codigo/", views.agregar_codigo, name="ticket_codigo"),
     path("ticket/<int:i>/quitar/", views.quitar, name="ticket_quitar"),
     path("ticket/<int:i>/cantidad/", views.cantidad, name="ticket_cantidad"),
     path("ticket/cliente/", views.cliente, name="ticket_cliente"),
     path("ticket/cobrar/", views.cobrar, name="ticket_cobrar"),
     path("caja/", views.caja, name="caja"),
+    path("remisiones/", views.remisiones, name="remisiones"),
+    path("remisiones/<str:folio>/", views.remision, name="remision"),
 ]

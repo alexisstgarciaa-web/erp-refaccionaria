@@ -1,20 +1,22 @@
 from decimal import Decimal, InvalidOperation
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.db.models import Count
 from django.http import JsonResponse
-from django.shortcuts import redirect, render
+from django.db.models import Q
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from compras.aplicaciones import buscar, clave_modelo, leer_consulta, selector
 
 from . import mostrador as m
-from .models import Cliente, FormaPago, Turno
+from .models import Cliente, FormaPago, Turno, Venta
 from .servicios import abrir_turno, cerrar_turno, esperado_en_caja
 
 
@@ -123,8 +125,28 @@ def mostrador(request):
     ctx["pedido_total"] = sum((ln.importe for ln in lineas if ln.sobre_pedido), Decimal(0))
     ctx["pedido_n"] = sum(1 for ln in lineas if ln.sobre_pedido)
     ctx["pagos"] = [fp for fp in FormaPago if fp != FormaPago.CREDITO or ticket.cliente.dias_credito > 0]
-    ctx["aqui"] = request.get_full_path()
+    ctx["aqui"] = _sin(request.get_full_path(), "codigo", "cantidad")
+    if g.get("codigo"):
+        texto, cant = m.leer_captura(g["codigo"], g.get("cantidad"))
+        ctx["por_codigo"] = {"texto": texto, "cantidad": cant,
+                             "resultados": m.buscar_codigo(texto, ticket.cliente.lista_precio)[0]}
+    ctx["enfocar_codigo"] = request.session.pop("enfocar_codigo", False) or bool(g.get("codigo"))
+    folio = request.session.pop("ultima_venta", None)
+    ctx["ultima_venta"] = Venta.objects.filter(folio=folio).first() if folio else None
     return render(request, "ventas/mostrador.html", ctx)
+
+
+def _sin(url, *params):
+    """La misma dirección sin esos parámetros (para no repetir una búsqueda al volver)."""
+    partes = urlsplit(url)
+    q = [(k, v) for k, v in parse_qsl(partes.query, keep_blank_values=True) if k not in params]
+    return urlunsplit(partes._replace(query=urlencode(q)))
+
+
+def _con(url, **params):
+    partes = urlsplit(url)
+    q = [(k, v) for k, v in parse_qsl(partes.query, keep_blank_values=True) if k not in params]
+    return urlunsplit(partes._replace(query=urlencode(q + list(params.items()))))
 
 
 @login_required
@@ -167,11 +189,40 @@ def _ficha(request, ticket, veh, litros_param, pos_clave=None):
 def agregar(request):
     ticket = m.Ticket(request.session)
     try:
-        ticket.agregar(request.POST["clave"], request.POST.get("pos"), nivel=request.POST.get("nivel", ""))
+        ticket.agregar(request.POST["clave"], request.POST.get("pos"), cantidad=_decimal(request.POST.get("cantidad")),
+                       nivel=request.POST.get("nivel", ""))
     except (KeyError, ValidationError, ObjectDoesNotExist):
         messages.error(request, "Esa opción ya no existe; vuelve a elegir.")
         return _volver(request)
+    if not request.POST.get("pos"):
+        request.session["enfocar_codigo"] = True  # listo para el siguiente código
     return _volver(request)
+
+
+@login_required
+@require_POST
+def agregar_codigo(request):
+    """Código tecleado o escaneado. Si es de una sola pieza entra directo al ticket; si no, se muestran
+    las coincidencias para elegir."""
+    texto, cantidad = m.leer_captura(request.POST.get("codigo", ""), request.POST.get("cantidad"))
+    if not texto:
+        return _volver(request)
+    ticket = m.Ticket(request.session)
+    encontrados, directo = m.buscar_codigo(texto, ticket.cliente.lista_precio)
+    request.session["enfocar_codigo"] = True
+    if directo:
+        op = encontrados[0].opcion
+        ticket.agregar(op.clave, None, cantidad=cantidad)
+        messages.success(request, f"{op.codigo} {op.marca} × {cantidad.normalize():f} al ticket."
+                         + (" Va sobre pedido." if op.existencia is None or op.existencia < cantidad else ""))
+        return _volver(request)
+    if not encontrados:
+        messages.warning(request, f"No encontré «{texto}». Revisa el código o busca por nombre.")
+        return _volver(request)
+    destino = request.POST.get("next") or ""
+    if not url_has_allowed_host_and_scheme(destino, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+        destino = reverse("mostrador")
+    return redirect(_con(destino, codigo=texto, cantidad=f"{cantidad.normalize():f}"))
 
 
 @login_required
@@ -241,6 +292,7 @@ def cobrar(request):
         return _volver(request)
     partes = []
     if venta:
+        request.session["ultima_venta"] = venta.folio
         partes.append(f"Venta {venta.folio} por ${venta.total:,.2f} con {venta.get_forma_pago_display().lower()}.")
     for oc in ordenes:
         partes.append(f"Quedó pedido a {oc.proveedor} en {oc.folio} (borrador, compra de emergencia).")
@@ -279,3 +331,30 @@ def caja(request):
             ctx["corte_filas"] = [(FormaPago(k).label, v, getattr(t, f"{CAMPO[k]}_contado"),
                                    getattr(t, f"{CAMPO[k]}_contado") - v) for k, v in esp.items()]
     return render(request, "ventas/caja.html", ctx)
+
+
+@login_required
+def remision(request, folio):
+    """Remisión de una venta para imprimir, en hoja carta o en ticket de 80 mm. No es comprobante fiscal."""
+    from django.conf import settings
+
+    venta = get_object_or_404(Venta.objects.select_related("cliente", "usuario", "lista"), folio=folio)
+    formato = "ticket" if request.GET.get("formato") == "ticket" else "carta"
+    pedido = venta.pedido or []
+    ctx = {"venta": venta, "formato": formato, "imprimir": request.GET.get("imprimir") == "1",
+           "lineas": venta.lineas.select_related("producto", "producto__marca", "unidad"),
+           "subtotal": venta.total - venta.iva, "pedido": pedido,
+           "pedido_total": sum((Decimal(p["importe"]) for p in pedido), Decimal(0)),
+           "abonado": venta.total - venta.saldo if venta.estado == Venta.Estado.CREDITO else None,
+           "rfc": settings.NEGOCIO_RFC, "direccion": settings.NEGOCIO_DIRECCION, "telefono": settings.NEGOCIO_TELEFONO}
+    return render(request, "ventas/remision.html", ctx)
+
+
+@login_required
+def remisiones(request):
+    """Ventas para buscar y reimprimir su remisión: por folio o por cliente."""
+    q = (request.GET.get("q") or "").strip()
+    ventas = Venta.objects.select_related("cliente").order_by("-fecha")
+    if q:
+        ventas = ventas.filter(Q(folio__icontains=q) | Q(cliente__nombre__icontains=q))
+    return render(request, "ventas/remisiones.html", {"ventas": ventas[:60], "q": q, "turno": _turno(request.user)})
