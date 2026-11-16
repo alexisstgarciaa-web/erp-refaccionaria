@@ -250,6 +250,37 @@ const verReciente = () => {
 };
 verReciente();
 
+// El ticket se queda fijo al bajar por la hoja de piezas solo mientras cabe en la pantalla. Si crece más
+// (p. ej. con el alta de cliente abierta) se suelta en el mismo lugar, para que la página se mueva hasta
+// el campo con el foco en vez de dejarlo abajo, fuera de la vista.
+const vigilarTicket = (() => {
+  let visto = null;
+  const ajustar = () => {
+    const t = document.querySelector(".ticket");
+    if (!t) return;
+    const antes = t.getBoundingClientRect().top, suelto = t.classList.contains("ticket-suelto");
+    t.classList.remove("ticket-suelto");
+    if (getComputedStyle(t).position !== "sticky") return;
+    const cobro = document.querySelector(".barra-cobro");
+    const libre = (cobro ? cobro.getBoundingClientRect().top : window.innerHeight) - parseFloat(getComputedStyle(t).top) - 12;
+    const soltar = t.offsetHeight > libre;
+    t.classList.toggle("ticket-suelto", soltar);
+    if (soltar && !suelto) window.scrollBy(0, t.getBoundingClientRect().top - antes); // que no brinque
+  };
+  const observador = window.ResizeObserver ? new ResizeObserver(() => ajustar()) : null;
+  window.addEventListener("resize", ajustar);
+  return () => {
+    const t = document.querySelector(".ticket");
+    if (observador && t !== visto) {
+      if (visto) observador.unobserve(visto);
+      if (t) observador.observe(t);
+      visto = t;
+    }
+    ajustar();
+  };
+})();
+vigilarTicket();
+
 // Cambios en el ticket (cantidad, precio, quitar, cliente) y en la hoja de piezas (opciones, «Llevar
 // completa») sin recargar la página: se manda el formulario por detrás y se cambian solo la mesa y la
 // barra de cobro, así la pantalla se queda donde estaba. Sin JavaScript, el formulario recarga como antes.
@@ -304,6 +335,7 @@ verReciente();
     nueva.querySelectorAll("details").forEach((d, i) => { if (abiertos[i] && !d.hasAttribute("data-servidor")) d.open = true; });
     const nuevasLineas = nueva.querySelector(".ticket-lineas");
     if (nuevasLineas) nuevasLineas.scrollTop = scroll;
+    vigilarTicket();
     verReciente();
     if (foco) {
       const el = nueva.querySelector(`form[action="${CSS.escape(foco.action)}"] [name="${CSS.escape(foco.name)}"]`);

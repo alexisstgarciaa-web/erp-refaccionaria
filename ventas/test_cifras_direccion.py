@@ -179,3 +179,16 @@ class DireccionTests(Base):
         self.assertContains(r, 'data-cp="/cp/00000/"')
         self.assertContains(r, "ventas/cp.js")
         self.assertEqual(self.client.get(reverse("admin:ventas_codigopostal_changelist"), {"q": "76000"}).status_code, 200)
+
+
+class TecladoTests(Base):
+    def test_enter_pasa_de_campo_en_pantallas_y_administracion(self):
+        self.client.force_login(self.user)
+        r = self.client.get(reverse("mostrador"))
+        self.assertContains(r, "ventas/campos.js")
+        # la captura y el cobro conservan su propio Enter
+        self.assertContains(r, '<form class="captura" method="post" data-enter="normal"')
+        self.assertContains(r, 'id="cobro-form" data-enter="normal"')
+        admin = get_user_model().objects.create_superuser("alexis", password="x")
+        self.client.force_login(admin)
+        self.assertContains(self.client.get(reverse("admin:ventas_cliente_add")), "ventas/campos.js")

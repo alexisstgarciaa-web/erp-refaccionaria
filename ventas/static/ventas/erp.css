@@ -215,6 +215,7 @@ option, optgroup { background: var(--fondo); color: var(--texto); }
 
 /* Ticket (detalle; el total va en la barra de abajo) */
 .ticket { position: sticky; top: 90px; padding: 18px 18px 8px; }
+.ticket.ticket-suelto { position: static; } /* más alto que la pantalla: que se mueva con la página (mostrador.js) */
 .ticket-cabeza { display: flex; justify-content: space-between; align-items: baseline; }
 .ticket-cabeza h2 { font-size: 20px; }
 .ticket-cabeza span { font-size: 12px; color: var(--texto-3); font-family: var(--f-mono); }

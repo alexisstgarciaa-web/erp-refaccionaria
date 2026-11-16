@@ -53,6 +53,7 @@
 </dialog>
 {% endif %}
 {% block scripts %}{% endblock %}
+<script src="{% static 'ventas/campos.js' %}" defer></script>
 {% if user.is_authenticated %}<script src="{% static 'ventas/nip.js' %}" defer></script>
 <script src="{% static 'ventas/cifras.js' %}" defer></script>
 <script src="{% static 'ventas/cp.js' %}" defer></script>{% endif %}

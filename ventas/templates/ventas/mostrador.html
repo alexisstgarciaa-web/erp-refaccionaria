@@ -60,7 +60,7 @@
   {% endif %}
 </section>
 
-<form class="captura" method="post" action="{% url 'ticket_codigo' %}" aria-label="Agregar por código"
+<form class="captura" method="post" data-enter="normal" action="{% url 'ticket_codigo' %}" aria-label="Agregar por código"
       data-sugerir="{% url 'ticket_sugerir' %}">{% csrf_token %}
   <input type="hidden" name="next" value="{{ aqui }}">
   <input type="hidden" name="clave" id="codigo-clave">
