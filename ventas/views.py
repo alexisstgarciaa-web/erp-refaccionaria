@@ -16,13 +16,16 @@ from django.views.decorators.http import require_POST
 
 from catalogo.models import ListaPrecio
 from compras.aplicaciones import buscar, clave_modelo, leer_consulta, selector
+from compras.models import PartidaListaProveedor
 
 from . import mostrador as m
 from . import nip as nips
-from .models import (RFC_GENERICO, Cliente, CodigoPostal, Devolucion, FormaPago, PedidoCliente, TicketGuardado,
-                     Turno, Venta, rfc_valido)
-from .servicios import (abrir_turno, cancelar_venta, cerrar_turno, disponible_para_devolver, esperado_en_caja,
-                        por_que_no_cancelar, registrar_abono, registrar_devolucion)
+from . import remisiones as rem
+from .models import (RFC_GENERICO, Cliente, CodigoPostal, Devolucion, FormaPago, PedidoCliente, RemisionBorrador,
+                     TicketGuardado, Turno, Venta, rfc_valido)
+from .servicios import (abrir_turno, cancelar_venta, cerrar_turno, cobrar_remision, disponible_para_devolver,
+                        emitir_remision, esperado_en_caja, por_que_no_cancelar, precio_de, registrar_abono,
+                        registrar_devolucion)
 from .templatetags.erp import cant, miles, pesos
 
 
@@ -319,7 +322,13 @@ def agregar_codigo(request):
 @login_required
 def sugerir(request):
     """Sugerencias para el campo de código mientras se teclea."""
-    res = m.sugerir(request.GET.get("q", ""), m.Ticket(request.session).cliente.lista_precio)
+    cliente = None
+    if (request.GET.get("cliente") or "").isdigit():  # Remisiones › Nueva: con la lista de ese cliente
+        cliente = Cliente.objects.filter(pk=request.GET["cliente"]).select_related("lista_precio").first()
+    lista = (cliente or m.Ticket(request.session).cliente).lista_precio
+    res = m.sugerir(request.GET.get("q", ""), lista)
+    if request.GET.get("para") == "remision":  # la remisión solo lleva lo que hay en el catálogo
+        res = [e for e in res if e.opcion.clave.startswith("producto:")]
     return JsonResponse({"q": request.GET.get("q", ""), "sugerencias": [{
         "clave": e.opcion.clave, "codigo": e.opcion.codigo, "marca": e.opcion.marca,
         "nombre": e.nombre[:70], "equivalente": e.por_equivalencia,
@@ -456,9 +465,8 @@ def cliente_nuevo(request):
         return error("El código postal lleva 5 números, o déjalo vacío.")
     existente = Cliente.objects.filter(nombre__iexact=datos["nombre"], activo=True).first()
     if existente:
-        ticket.elegir_cliente(existente.pk)
-        messages.info(request, f"{existente} ya estaba dado de alta; lo dejé elegido.")
-        return _volver(request)
+        messages.info(request, f"{existente} ({existente.folio}) ya estaba dado de alta; lo dejé elegido.")
+        return _elegido_en(request, ticket, existente)
     lista = ListaPrecio.objects.filter(pk=datos["lista"]).first() if datos["lista"].isdigit() else None
     nuevo = Cliente(nombre=datos["nombre"][:150], telefono=datos["telefono"][:20], rfc=datos["rfc"],
                     lista_precio=lista or m.cliente_mostrador().lista_precio,
@@ -474,9 +482,20 @@ def cliente_nuevo(request):
             return _volver(request)
         nuevo.dias_credito, nuevo.limite_credito = int(dias), limite
     nuevo.save()
-    ticket.elegir_cliente(nuevo.pk)
     extra = f" con {nuevo.dias_credito} días de crédito hasta {pesos(nuevo.limite_credito)}" if nuevo.dias_credito else ""
-    messages.success(request, f"Cliente {nuevo} dado de alta{extra} y elegido en el ticket.")
+    donde = "la remisión" if request.POST.get("para") == "remision" else "el ticket"
+    messages.success(request, f"Cliente {nuevo} ({nuevo.folio}) dado de alta{extra} y elegido en {donde}.")
+    return _elegido_en(request, ticket, nuevo)
+
+
+def _elegido_en(request, ticket, cliente):
+    """Después del alta: en Remisiones › Nueva regresa con el cliente elegido; en el mostrador lo elige en el ticket."""
+    if request.POST.get("para") == "remision":
+        destino = request.POST.get("next") or ""
+        if not url_has_allowed_host_and_scheme(destino, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+            destino = reverse("remision_nueva")
+        return redirect(_con(_sin(destino, "cliente"), cliente=cliente.pk))
+    ticket.elegir_cliente(cliente.pk)
     return _volver(request)
 
 
@@ -605,10 +624,8 @@ def cotizaciones(request):
     cots = TicketGuardado.objects.filter(tipo=TicketGuardado.Tipo.COTIZACION).select_related("cliente")
     if q:
         cots = cots.filter(Q(folio__icontains=q) | Q(cliente__nombre__icontains=q) | Q(nombre__icontains=q))
-    pendiente = Venta.objects.filter(estado=Venta.Estado.CREDITO)
     return render(request, "ventas/cotizaciones.html", {
-        "cotizaciones": cots[:60], "q": q, "turno": _turno(request.user), "hoy": timezone.localdate(),
-        "saldo_total": pendiente.aggregate(s=Sum("saldo"))["s"] or 0, "n_por_cobrar": pendiente.count()})
+        "cotizaciones": cots[:60], "q": q, "turno": _turno(request.user), "hoy": timezone.localdate(), **_pestanas()})
 
 
 def _situacion(p):
@@ -709,7 +726,8 @@ def caja(request):
         except ValidationError as e:
             messages.error(request, " ".join(e.messages))
         return redirect("caja")
-    ctx = {"turno": turno}
+    ctx = {"turno": turno, "formas": [c for c in FormaPago.choices if c[0] != FormaPago.CREDITO],
+           "por_cobrar": Venta.objects.filter(estado=Venta.Estado.POR_COBRAR).select_related("cliente", "usuario").order_by("fecha")}
     if turno:
         esp = esperado_en_caja(turno)
         ctx["esperado"] = [(FormaPago(k).label, CAMPO[k], v) for k, v in esp.items()]
@@ -742,21 +760,28 @@ def remision(request, folio):
     return render(request, "ventas/remision.html", ctx)
 
 
+def _pestanas():
+    """Las cuentas que se ven en las pestañas de Remisiones."""
+    pendiente = Venta.objects.filter(estado__in=[Venta.Estado.CREDITO, Venta.Estado.POR_COBRAR])
+    return {"saldo_total": pendiente.aggregate(s=Sum("saldo"))["s"] or 0, "n_por_cobrar": pendiente.count(),
+            "n_borradores": RemisionBorrador.objects.count()}
+
+
 @login_required
 def remisiones(request):
     """Ventas para buscar, reimprimir, cobrar abonos o cancelar: por folio o por cliente.
-    «Por cobrar» deja solo las de crédito con saldo, las más vencidas primero."""
+    «Por cobrar» deja las de crédito con saldo (las más vencidas primero) y las remisiones de contado que
+    falta cobrar en caja."""
     q = (request.GET.get("q") or "").strip()
     por_cobrar = request.GET.get("ver") == "por-cobrar"
     ventas = Venta.objects.select_related("cliente").order_by("-fecha")
     if por_cobrar:
-        ventas = ventas.filter(estado=Venta.Estado.CREDITO).order_by("vence", "fecha")
+        ventas = ventas.filter(estado__in=[Venta.Estado.CREDITO, Venta.Estado.POR_COBRAR]).order_by("vence", "fecha")
     if q:
-        ventas = ventas.filter(Q(folio__icontains=q) | Q(cliente__nombre__icontains=q))
-    pendiente = Venta.objects.filter(estado=Venta.Estado.CREDITO)
+        cte = rem.pk_de_folio(q)
+        ventas = ventas.filter(cliente_id=cte) if cte is not None else ventas.filter(Q(folio__icontains=q) | Q(cliente__nombre__icontains=q))
     ctx = {"ventas": ventas[:60], "q": q, "por_cobrar": por_cobrar, "turno": _turno(request.user),
-           "hoy": timezone.localdate(), "saldo_total": pendiente.aggregate(s=Sum("saldo"))["s"] or 0,
-           "n_por_cobrar": pendiente.count()}
+           "hoy": timezone.localdate(), **_pestanas()}
     return render(request, "ventas/remisiones.html", ctx)
 
 
@@ -780,7 +805,7 @@ def venta(request, folio):
            "formas_abono": [c for c in FormaPago.choices if c[0] != FormaPago.CREDITO],
            "no_cancelar": por_que_no_cancelar(venta),
            "vencida": venta.estado == Venta.Estado.CREDITO and venta.vence and venta.vence < hoy,
-           "devolver_dinero": venta.forma_pago != FormaPago.CREDITO}
+           "devolver_dinero": venta.forma_pago not in (FormaPago.CREDITO, "")}
     return render(request, "ventas/venta.html", ctx)
 
 
@@ -861,12 +886,11 @@ def devoluciones(request):
     if q:
         qs = qs.filter(Q(folio__icontains=q) | Q(venta__folio__icontains=q) | Q(venta__cliente__nombre__icontains=q)
                        | Q(lineas__venta_linea__producto__sku__icontains=q)).distinct()
-    pendiente = Venta.objects.filter(estado=Venta.Estado.CREDITO)
     return render(request, "ventas/devoluciones.html", {
         "devoluciones": qs[:60], "q": q, "por_reclamar": por_reclamar, "turno": _turno(request.user),
         "reclamos": Devolucion.Reclamo.choices,
         "n_reclamar": Devolucion.objects.filter(tipo=Devolucion.Tipo.GARANTIA, reclamo=Devolucion.Reclamo.PENDIENTE).count(),
-        "saldo_total": pendiente.aggregate(s=Sum("saldo"))["s"] or 0, "n_por_cobrar": pendiente.count()})
+        **_pestanas()})
 
 
 @login_required
@@ -898,7 +922,157 @@ def venta_cancelar(request, folio):
             messages.error(request, " ".join(e.messages))
         else:
             aviso = f"{venta.folio} cancelada. El inventario regresó al anaquel."
-            if venta.forma_pago != FormaPago.CREDITO:
+            if venta.forma_pago not in (FormaPago.CREDITO, ""):  # «por cobrar en caja» no se había pagado
                 aviso += f" Devuelve {pesos(venta.total)} al cliente; ya no cuenta en el corte."
             messages.success(request, aviso)
     return redirect("venta", folio)
+
+
+# ---------------------------------------------------------------------------------------------
+# Remisiones › Nueva: la remisión hecha con calma, aparte del mostrador
+# ---------------------------------------------------------------------------------------------
+
+@login_required
+def clientes_buscar(request):
+    """Clientes por folio (CTE-0012), celular o nombre, para elegirlo en la remisión."""
+    return JsonResponse({"clientes": [rem.cliente_json(c) for c in rem.buscar_clientes(request.GET.get("q", ""))]})
+
+
+@login_required
+def remision_precios(request):
+    """Precio de lista y existencia de las partidas para el cliente elegido (al cambiar de cliente)."""
+    cliente = Cliente.objects.filter(pk=request.GET.get("cliente") or 0).select_related("lista_precio").first()
+    res = {}
+    for clave in request.GET.getlist("clave")[:100]:
+        try:
+            obj = m.resolver(clave)
+        except (ValidationError, ObjectDoesNotExist):
+            continue
+        if cliente and not isinstance(obj, PartidaListaProveedor):
+            res[clave] = rem.fila_de(obj, cliente)
+    return JsonResponse({"filas": res})
+
+
+def _datos_remision(request, borrador=None):
+    """Lo que trae el formulario (o el borrador guardado) para volver a pintarlo."""
+    if request.method == "POST":
+        p = request.POST
+        cliente = (Cliente.objects.filter(pk=p["cliente"], activo=True).select_related("lista_precio").first()
+                   if (p.get("cliente") or "").isdigit() else None)
+        return {"cliente": cliente, "condiciones": "CREDITO" if p.get("condiciones") == "CREDITO" else "CONTADO",
+                "orden_compra": p.get("orden_compra", "").strip()[:40], "vehiculo": p.get("vehiculo", "").strip()[:120],
+                "observaciones": p.get("observaciones", "").strip()[:300], "lineas": rem.leer_lineas(p)}
+    if borrador:
+        nuevo = (Cliente.objects.filter(pk=request.GET["cliente"], activo=True).first()
+                 if (request.GET.get("cliente") or "").isdigit() else None)  # recién dado de alta desde el borrador
+        return {"cliente": nuevo or borrador.cliente, "condiciones": borrador.condiciones, "orden_compra": borrador.orden_compra,
+                "vehiculo": borrador.vehiculo, "observaciones": borrador.observaciones, "lineas": borrador.lineas}
+    cliente = None
+    if (request.GET.get("cliente") or "").isdigit():  # recién dado de alta desde esta pantalla
+        cliente = Cliente.objects.filter(pk=request.GET["cliente"], activo=True).first()
+    return {"cliente": cliente, "condiciones": "CONTADO", "orden_compra": "", "vehiculo": "", "observaciones": "",
+            "lineas": []}
+
+
+def _precio_remision(request, cliente):
+    """Regla de precio de la remisión: vacío es el de la lista del cliente; con el descuento aplicado no puede
+    quedar abajo del costo, salvo que lo deje un administrador (sin decir el costo)."""
+    def precio(prod, texto, descuento):
+        tecleado = None
+        if str(texto or "").strip():
+            tecleado = _decimal(texto)
+            if tecleado is None or tecleado <= 0:
+                raise ValidationError(f"Escribe un precio válido para {prod.sku}, por ejemplo 125.50.")
+            tecleado = tecleado.quantize(Decimal("0.01"))
+        base = tecleado if tecleado is not None else precio_de(prod, cliente.lista_precio)
+        neto = (base * (100 - descuento) / 100).quantize(Decimal("0.01"))
+        if m.abajo_del_costo(prod, neto):
+            if not request.user.is_staff:
+                raise ValidationError(f"{prod.sku} a {pesos(neto)} queda abajo del costo. Solo un administrador puede dejarlo así.")
+            messages.warning(request, f"Ojo: {prod.sku} a {pesos(neto)} queda abajo del costo.")
+        return tecleado
+    return precio
+
+
+@login_required
+def remision_nueva(request, pk=None):
+    """Remisión con cliente (por folio, celular o nombre), condiciones de pago, orden de compra, observaciones
+    y partidas. Se guarda como borrador o se emite con el NIP de quien la hace."""
+    borrador = get_object_or_404(RemisionBorrador, pk=pk) if pk else None
+    datos = _datos_remision(request, borrador)
+    if request.method == "POST":
+        if request.POST.get("accion") == "emitir":
+            try:
+                cliente = datos["cliente"]
+                if not cliente:
+                    raise ValidationError("Elige al cliente: teclea su folio, su celular o su nombre.")
+                if datos["condiciones"] == "CREDITO" and cliente.dias_credito <= 0:
+                    raise ValidationError(f"{cliente} no tiene crédito autorizado: va de contado.")
+                partidas = rem.partidas(datos["lineas"], cliente, _precio_remision(request, cliente))
+                quien = _autoriza(request)
+                if quien:
+                    venta = emitir_remision(cliente, partidas, datos["condiciones"], quien, datos["orden_compra"],
+                                            datos["observaciones"], datos["vehiculo"])
+                    if borrador:
+                        borrador.delete()
+                    siguiente = ("Ya puedes cobrarla en Caja." if venta.estado == Venta.Estado.POR_COBRAR
+                                 else f"Quedó en Por cobrar; vence el {venta.vence:%d/%m/%Y}.")
+                    messages.success(request, f"Remisión {venta.folio} por {pesos(venta.total)} para {cliente}. {siguiente}")
+                    return redirect("venta", venta.folio)
+            except (ValidationError, ObjectDoesNotExist) as e:
+                messages.error(request, " ".join(getattr(e, "messages", [str(e)])))
+        else:  # guardar borrador
+            borrador = borrador or RemisionBorrador(usuario=request.user)
+            for campo in ("cliente", "condiciones", "orden_compra", "vehiculo", "observaciones", "lineas"):
+                setattr(borrador, campo, datos[campo])
+            borrador.total = rem.total_tecleado(datos["lineas"])
+            borrador.save()
+            messages.success(request, f"Borrador {borrador.pk} guardado. Lo sigues desde Remisiones › Borradores.")
+            return redirect("remision_borrador", borrador.pk)
+    cliente = datos["cliente"]
+    ctx = {"datos": datos, "borrador": borrador, "cliente_actual": rem.cliente_json(cliente) if cliente else None,
+           "lineas": datos["lineas"] + [dict.fromkeys(rem.CAMPOS_LINEA, "")],  # siempre una fila vacía al final
+           "turno": _turno(request.user), "listas_precio": ListaPrecio.objects.order_by("nombre"),
+           "cliente_nuevo": request.session.pop("cliente_nuevo", None), "rfc_generico": RFC_GENERICO,
+           "aqui": request.get_full_path()}
+    return render(request, "ventas/remision_nueva.html", ctx, status=400 if request.method == "POST" else 200)
+
+
+@login_required
+def remision_borradores(request):
+    borradores = RemisionBorrador.objects.select_related("cliente", "usuario")
+    return render(request, "ventas/borradores.html", {"borradores": borradores, "turno": _turno(request.user), **_pestanas()})
+
+
+@login_required
+@require_POST
+def remision_borrador_borrar(request, pk):
+    b = get_object_or_404(RemisionBorrador, pk=pk)
+    b.delete()
+    messages.success(request, f"Borrador {pk} borrado.")
+    return redirect("remision_borradores")
+
+
+@login_required
+@require_POST
+def remision_cobrar(request, folio):
+    """Caja cobra una remisión de contado (con el NIP de quien cobra)."""
+    venta = _venta(folio)
+    turno = _turno(request.user)
+    destino = "caja" if request.POST.get("desde") == "caja" else None
+    if not turno:
+        messages.error(request, "Abre la caja para cobrar: el dinero entra al corte de tu turno.")
+        return redirect("caja")
+    quien = _autoriza(request)
+    if quien:
+        forma = request.POST.get("forma_pago", "")
+        paga_con = _decimal(request.POST.get("paga_con")) if forma == FormaPago.EFECTIVO else None
+        try:
+            if paga_con is not None and paga_con < venta.total:
+                raise ValidationError(f"Paga con {pesos(paga_con)} y son {pesos(venta.total)}: faltan {pesos(venta.total - paga_con)}.")
+            cobrar_remision(venta, turno, forma, quien)
+            cambio = f" Cambio: {pesos(paga_con - venta.total)}." if paga_con is not None else ""
+            messages.success(request, f"{venta.folio} cobrada: {pesos(venta.total)} en {FormaPago(forma).label.lower()}.{cambio}")
+        except ValidationError as e:
+            messages.error(request, " ".join(e.messages))
+    return redirect(destino or "venta", *([] if destino else [venta.folio]))

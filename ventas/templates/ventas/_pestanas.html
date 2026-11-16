@@ -2,6 +2,7 @@
   {% url 'remisiones' as u_rem %}{% url 'cotizaciones' as u_cot %}
   <a href="{{ u_rem }}{% if q %}?q={{ q|urlencode }}{% endif %}"{% if pestana == 'todas' %} aria-current="page"{% endif %}>Ventas</a>
   <a href="{{ u_rem }}?ver=por-cobrar{% if q %}&amp;q={{ q|urlencode }}{% endif %}"{% if pestana == 'por-cobrar' %} aria-current="page"{% endif %}>Por cobrar{% if n_por_cobrar %} <small>{{ n_por_cobrar }} · {{ saldo_total|pesos }}</small>{% endif %}</a>
+  {% url 'remision_borradores' as u_bor %}<a href="{{ u_bor }}"{% if pestana == 'borradores' %} aria-current="page"{% endif %}>Borradores{% if n_borradores %} <small>{{ n_borradores }}</small>{% endif %}</a>
   <a href="{{ u_cot }}{% if q %}?q={{ q|urlencode }}{% endif %}"{% if pestana == 'cotizaciones' %} aria-current="page"{% endif %}>Cotizaciones</a>
   {% url 'devoluciones' as u_dev %}<a href="{{ u_dev }}"{% if pestana == 'devoluciones' %} aria-current="page"{% endif %}>Devoluciones</a>
 </nav>

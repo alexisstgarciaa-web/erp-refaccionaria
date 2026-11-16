@@ -40,20 +40,57 @@ def abrir_turno(usuario, fondo_inicial=0, por=None):
 
 @transaction.atomic
 def registrar_venta(turno, cliente, partidas, forma_pago, usuario=None):
-    """partidas: [{producto, cantidad, unidad?, precio?}]. El precio sale de la lista del cliente, salvo que
-    la partida traiga uno (con IVA) tecleado en mostrador.
+    """partidas: [{producto, cantidad, unidad?, precio?, descuento?}]. El precio sale de la lista del cliente,
+    salvo que la partida traiga uno (con IVA) tecleado en mostrador.
     Todo o nada: si una pieza no tiene existencia o precio, no se registra nada."""
     if turno.cerrado:
         raise ValidationError("El turno está cerrado.")
-    if not partidas:
-        raise ValidationError("La venta no tiene productos.")
     if forma_pago not in FormaPago.values:
         raise ValidationError(f"Forma de pago desconocida: {forma_pago}.")
+    return _crear_venta(cliente, partidas, forma_pago, turno=turno, usuario=usuario or turno.usuario)
 
-    venta = Venta.objects.create(folio=f"TMP-{timezone.now().timestamp()}", turno=turno, cliente=cliente,
-                                 lista=cliente.lista_precio, forma_pago=forma_pago,
-                                 estado=Venta.Estado.PAGADA, usuario=usuario or turno.usuario)
-    venta.folio = f"VTA-{venta.pk:06d}"
+
+def _siguiente_remision():
+    ultimo = Venta.objects.filter(folio__startswith="REM-").order_by("-pk").values_list("folio", flat=True).first()
+    return f"REM-{int(ultimo.split('-')[1]) + 1 if ultimo else 1:06d}"
+
+
+@transaction.atomic
+def emitir_remision(cliente, partidas, condiciones, usuario, orden_compra="", observaciones="", vehiculo=""):
+    """Remisión de Remisiones › Nueva, con folio REM. El inventario sale al emitirla.
+    De contado queda «por cobrar en caja» (entra al corte del turno que la cobre); a crédito va a Por cobrar."""
+    forma = FormaPago.CREDITO if condiciones == "CREDITO" else ""
+    return _crear_venta(cliente, partidas, forma, usuario=usuario, origen=Venta.Origen.REMISION,
+                        folio=_siguiente_remision(), orden_compra=(orden_compra or "").strip()[:40],
+                        observaciones=(observaciones or "").strip()[:300], vehiculo=(vehiculo or "").strip()[:120])
+
+
+@transaction.atomic
+def cobrar_remision(venta, turno, forma_pago, usuario=None):
+    """Caja cobra una remisión de contado: queda pagada en su turno, como una venta de mostrador."""
+    venta = Venta.objects.select_for_update().get(pk=venta.pk)
+    if venta.estado != Venta.Estado.POR_COBRAR:
+        raise ValidationError(f"{venta.folio} ya no está por cobrar.")
+    if not turno or turno.cerrado:
+        raise ValidationError("Abre la caja para cobrar: el dinero entra al corte de tu turno.")
+    if forma_pago not in (FormaPago.EFECTIVO, FormaPago.TARJETA, FormaPago.TRANSFERENCIA):
+        raise ValidationError("Elige cómo paga: efectivo, tarjeta o transferencia.")
+    venta.turno, venta.forma_pago, venta.estado, venta.saldo = turno, forma_pago, Venta.Estado.PAGADA, 0
+    venta.cobrada, venta.cobrada_por = timezone.now(), usuario
+    venta.save(update_fields=["turno", "forma_pago", "estado", "saldo", "cobrada", "cobrada_por"])
+    return venta
+
+
+def _crear_venta(cliente, partidas, forma_pago, *, turno=None, usuario=None, origen=Venta.Origen.MOSTRADOR,
+                 folio=None, **extra):
+    """forma_pago vacía: remisión de contado que se cobra después en caja."""
+    if not partidas:
+        raise ValidationError("La venta no tiene productos.")
+    venta = Venta.objects.create(folio=folio or f"TMP-{timezone.now().timestamp()}", turno=turno, cliente=cliente,
+                                 lista=cliente.lista_precio, forma_pago=forma_pago, origen=origen,
+                                 estado=Venta.Estado.PAGADA, usuario=usuario, **extra)
+    if not folio:
+        venta.folio = f"VTA-{venta.pk:06d}"
     total = costo = Decimal(0)
     for pt in partidas:
         producto, cantidad = pt["producto"], Decimal(str(pt["cantidad"]))
@@ -68,6 +105,11 @@ def registrar_venta(turno, cliente, partidas, forma_pago, usuario=None):
                 raise ValidationError(f"Precio inválido para {producto.sku}.")
         else:
             precio = precio_de(producto, cliente.lista_precio, unidad)
+        descuento = Decimal(str(pt.get("descuento") or 0))
+        if not 0 <= descuento < 100:
+            raise ValidationError(f"El descuento de {producto.sku} va de 0 a 99%.")
+        if descuento:
+            precio = _m(precio * (100 - descuento) / 100)
         factor = producto.factor_a_base(unidad)
         movs = registrar_salida(producto, cantidad * factor, Movimiento.Tipo.SALIDA_VENTA,
                                 referencia=venta.folio, usuario=venta.usuario)
@@ -75,7 +117,7 @@ def registrar_venta(turno, cliente, partidas, forma_pago, usuario=None):
         importe = _m(precio * cantidad)
         VentaLinea.objects.create(venta=venta, producto=producto, unidad=unidad, cantidad=cantidad,
                                   cantidad_base=cantidad * factor, precio_unitario=precio, importe=importe,
-                                  costo_unitario=costo_u)
+                                  costo_unitario=costo_u, descuento=descuento)
         total += importe
         costo += costo_u * cantidad
 
@@ -87,6 +129,8 @@ def registrar_venta(turno, cliente, partidas, forma_pago, usuario=None):
             raise ValidationError(f"La venta de {pesos(total)} excede el crédito disponible de {cliente} ({pesos(disponible)}).")
         venta.estado, venta.saldo = Venta.Estado.CREDITO, total
         venta.vence = timezone.localdate() + timedelta(days=cliente.dias_credito)
+    elif not forma_pago:
+        venta.estado, venta.saldo = Venta.Estado.POR_COBRAR, total
     venta.total, venta.iva, venta.costo_total = total, _m(total - total / (1 + IVA)), _m(costo)
     venta.save()
     return venta
@@ -102,7 +146,7 @@ def por_que_no_cancelar(venta):
         return "Tiene abonos registrados; no se puede cancelar."
     if venta.devoluciones.exists():
         return "Ya tiene devoluciones o garantías; no se puede cancelar completa."
-    if venta.forma_pago != FormaPago.CREDITO and venta.turno.cerrado is not None:
+    if venta.forma_pago != FormaPago.CREDITO and venta.turno and venta.turno.cerrado is not None:
         return "Es de contado y su turno ya se cerró: ese dinero ya se contó en el corte."
     return None
 
@@ -173,6 +217,8 @@ def registrar_devolucion(venta, tipo, cantidades, autorizo, motivo, turno=None, 
     venta = Venta.objects.select_for_update().get(pk=venta.pk)
     if venta.estado == Venta.Estado.CANCELADA:
         raise ValidationError(f"{venta.folio} está cancelada.")
+    if venta.estado == Venta.Estado.POR_COBRAR:
+        raise ValidationError(f"{venta.folio} todavía no se cobra: cóbrala en caja o cancélala.")
     motivo = (motivo or "").strip()
     if not motivo:
         raise ValidationError("Escribe el motivo.")

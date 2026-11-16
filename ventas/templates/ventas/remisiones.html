@@ -2,14 +2,17 @@
 {% load erp %}
 {% block titulo %}Remisiones{% endblock %}
 {% block contenido %}
-<header class="pagina-titulo">
-  <h1>Remisiones</h1>
-  <p>Busca una venta por folio o por cliente. Ábrela para reimprimir, registrar abonos o cancelarla.</p>
+<header class="pagina-titulo con-accion">
+  <div>
+    <h1>Remisiones</h1>
+    <p>Busca una venta o remisión por folio o por cliente. Ábrela para reimprimir, cobrar, registrar abonos o cancelarla.</p>
+  </div>
+  <a class="btn-primario" href="{% url 'remision_nueva' %}">Nueva remisión</a>
 </header>
 {% if por_cobrar %}{% include "ventas/_pestanas.html" with pestana="por-cobrar" %}{% else %}{% include "ventas/_pestanas.html" with pestana="todas" %}{% endif %}
 <form class="panel bloque buscar-remision" method="get" role="search">
   {% if por_cobrar %}<input type="hidden" name="ver" value="por-cobrar">{% endif %}
-  <label class="campo">Folio o cliente <input name="q" value="{{ q }}" placeholder="VTA-000012, Taller Ramírez" autofocus></label>
+  <label class="campo">Folio o cliente <input name="q" value="{{ q }}" placeholder="REM-000003, VTA-000012, CTE-0012 o Taller Ramírez" autofocus></label>
   <button class="btn" type="submit">Buscar</button>
 </form>
 <section class="panel bloque">
@@ -21,11 +24,11 @@
         <td><a class="folio" href="{% url 'venta' v.folio %}">{{ v.folio }}</a></td>
         <td>{{ v.fecha|date:"j M Y, H:i" }}</td>
         <td>{{ v.cliente }}</td>
-        <td>{{ v.get_forma_pago_display }}</td>
-        <td>{% if v.estado == 'CANCELADA' %}<span class="rojo">Cancelada</span>{% elif v.estado == 'CREDITO' %}<span class="{% if v.vence and v.vence < hoy %}rojo{% endif %}">{% if v.vence and v.vence < hoy %}Vencida{% else %}Crédito{% endif %} · debe {{ v.saldo|pesos }}</span>{% if v.vence %} <small class="tenue">vence {{ v.vence|date:"j M" }}</small>{% endif %}{% else %}Pagada{% endif %}</td>
+        <td>{{ v.get_forma_pago_display|default:"Contado" }}</td>
+        <td>{% if v.estado == 'CANCELADA' %}<span class="rojo">Cancelada</span>{% elif v.estado == 'POR_COBRAR' %}<span class="rojo">Por cobrar en caja</span>{% elif v.estado == 'CREDITO' %}<span class="{% if v.vence and v.vence < hoy %}rojo{% endif %}">{% if v.vence and v.vence < hoy %}Vencida{% else %}Crédito{% endif %} · debe {{ v.saldo|pesos }}</span>{% if v.vence %} <small class="tenue">vence {{ v.vence|date:"j M" }}</small>{% endif %}{% else %}Pagada{% endif %}</td>
         <td class="num">{{ v.total|pesos }}</td>
         <td class="num acciones-remision">
-          {% if v.estado == 'CREDITO' %}<a href="{% url 'venta' v.folio %}#abono">Abonar</a>{% endif %}
+          {% if v.estado == 'CREDITO' %}<a href="{% url 'venta' v.folio %}#abono">Abonar</a>{% elif v.estado == 'POR_COBRAR' %}<a href="{% url 'venta' v.folio %}#cobrar">Cobrar</a>{% endif %}
           <a href="{% url 'remision' v.folio %}" target="_blank" rel="noopener">Carta</a>
           <a href="{% url 'remision' v.folio %}?formato=ticket" target="_blank" rel="noopener">Ticket</a>
         </td>

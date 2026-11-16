@@ -1,16 +1,21 @@
 {% extends "ventas/base.html" %}
-{% load erp %}
+{% load erp static %}
 {% block titulo %}{{ venta.folio }}{% endblock %}
 {% block contenido %}
 <p class="migas"><a href="{% url 'remisiones' %}">‹ Remisiones</a></p>
 <header class="pagina-titulo venta-titulo">
   <h1>{{ venta.folio }}
     {% if venta.estado == 'CANCELADA' %}<span class="estado pedido">Cancelada</span>
+    {% elif venta.estado == 'POR_COBRAR' %}<span class="estado debe">Por cobrar en caja</span>
     {% elif venta.estado == 'CREDITO' %}<span class="estado {% if vencida %}pedido{% else %}debe{% endif %}">{% if vencida %}Vencida{% else %}Crédito{% endif %}</span>
     {% else %}<span class="estado hay">Pagada</span>{% endif %}
   </h1>
-  <p>{{ venta.fecha|date:"j M Y, H:i" }} · {{ venta.cliente }} · {{ venta.get_forma_pago_display }}{% if venta.usuario %} · atendió {{ venta.usuario.get_short_name|default:venta.usuario.get_username }}{% endif %}{% if venta.vehiculo %} · {{ venta.vehiculo }}{% endif %}</p>
+  <p>{{ venta.fecha|date:"j M Y, H:i" }} · {{ venta.cliente }}{% if venta.cliente.pk %} <span class="mono">{{ venta.cliente.folio }}</span>{% endif %} · {% if venta.forma_pago %}{{ venta.get_forma_pago_display }}{% else %}Contado, pendiente de cobro{% endif %}{% if venta.es_remision %} · remisión{% endif %}{% if venta.usuario %} · atendió {{ venta.usuario.get_short_name|default:venta.usuario.get_username }}{% endif %}{% if venta.vehiculo %} · {{ venta.vehiculo }}{% endif %}</p>
 </header>
+
+{% if venta.orden_compra or venta.observaciones or venta.cobrada %}
+<p class="venta-datos">{% if venta.orden_compra %}<span>OC del cliente <b class="mono">{{ venta.orden_compra }}</b></span>{% endif %}{% if venta.observaciones %}<span>{{ venta.observaciones }}</span>{% endif %}{% if venta.cobrada %}<span>Cobrada en caja {{ venta.cobrada|date:"j M Y, H:i" }}{% if venta.cobrada_por %} por {{ venta.cobrada_por.get_short_name|default:venta.cobrada_por.get_username }}{% endif %}</span>{% endif %}</p>
+{% endif %}
 
 {% if venta.estado == 'CANCELADA' %}
 <div class="aviso error venta-cancelada">
@@ -30,7 +35,7 @@
           <td class="mono">{{ ln.producto.numero_parte|default:ln.producto.sku }}</td>
           <td>{{ ln.producto.nombre }} <small class="tenue">{{ ln.producto.marca }}</small></td>
           <td class="num">{{ ln.cantidad|cant }} {{ ln.unidad }}</td>
-          <td class="num">{{ ln.precio_unitario|pesos }}</td>
+          <td class="num">{{ ln.precio_unitario|pesos }}{% if ln.descuento %}<small class="tenue venta-desc">con {{ ln.descuento|cant }}% desc.</small>{% endif %}</td>
           <td class="num">{{ ln.importe|pesos }}</td>
         </tr>
         {% endfor %}
@@ -57,7 +62,7 @@
     {% endif %}
   </section>
 
-  {% if venta.estado != 'CANCELADA' %}
+  {% if venta.estado != 'CANCELADA' and venta.estado != 'POR_COBRAR' %}
   <section class="panel bloque venta-devolver" id="devolver">
     <h2>Devolución o garantía</h2>
     <p>Cuando el cliente regresa piezas. En una devolución se le regresa el dinero, o se baja de su saldo si debe. En una garantía se le da otra pieza igual sin cobrar y la mala queda por reclamar al proveedor. Lo autoriza un administrador con su NIP.</p>
@@ -96,6 +101,15 @@
   </div>
 
   <div class="venta-lado">
+    {% if venta.estado == 'POR_COBRAR' %}
+    <section class="panel bloque venta-cobranza venta-por-cobrar" id="cobrar">
+      <h2>Cobro en caja</h2>
+      <p>Es de contado y no se ha cobrado. El inventario ya salió; el dinero entra al corte de quien la cobre.</p>
+      <dl class="venta-cifras"><div class="saldo"><dt>Por cobrar</dt><dd class="rojo">{{ venta.total|pesos }}</dd></div></dl>
+      {% if turno %}{% include "ventas/_cobrar_remision.html" with v=venta formas=formas_abono %}
+      {% else %}<p class="tenue">Para cobrarla <a href="{% url 'caja' %}">abre la caja</a>: el dinero entra al corte de tu turno.</p>{% endif %}
+    </section>
+    {% endif %}
     {% if venta.forma_pago == 'CREDITO' %}
     <section class="panel bloque venta-cobranza" id="abono">
       <h2>Cobranza</h2>
@@ -141,9 +155,9 @@
     <section class="panel bloque venta-cancelar">
       <h2>Cancelar venta</h2>
       {% if no_cancelar %}
-      <p class="tenue">{{ no_cancelar }}{% if venta.estado != 'CANCELADA' %} Si regresa piezas, usa <a href="#devolver">devolución o garantía</a>.{% endif %}</p>
+      <p class="tenue">{{ no_cancelar }}{% if venta.estado != 'CANCELADA' and venta.estado != 'POR_COBRAR' %} Si regresa piezas, usa <a href="#devolver">devolución o garantía</a>.{% endif %}</p>
       {% else %}
-      <p>Regresa todo al inventario{% if devolver_dinero %} y le devuelves {{ venta.total|pesos }} al cliente; la venta deja de contar en el corte{% else %} y el saldo de {{ venta.cliente }} baja {{ venta.saldo|pesos }}{% endif %}. Lo autoriza un administrador con su NIP.</p>
+      <p>Regresa todo al inventario{% if venta.estado == 'POR_COBRAR' %}; como no se cobró, no hay dinero que devolver{% elif devolver_dinero %} y le devuelves {{ venta.total|pesos }} al cliente; la venta deja de contar en el corte{% else %} y el saldo de {{ venta.cliente }} baja {{ venta.saldo|pesos }}{% endif %}. Lo autoriza un administrador con su NIP.</p>
       <form method="post" action="{% url 'venta_cancelar' venta.folio %}" class="cancelar-form" data-nip="admin" data-nip-para="Cancelar {{ venta.folio }} por {{ venta.total|pesos }}">{% csrf_token %}
         <label class="campo">Motivo <input name="motivo" maxlength="200" required placeholder="Se equivocó de pieza, no la quiso…" autocomplete="off"></label>
         <button class="btn btn-peligro" type="submit">Cancelar venta</button>
@@ -154,3 +168,4 @@
   </div>
 </div>
 {% endblock %}
+{% block scripts %}{% if venta.estado == 'POR_COBRAR' %}<script src="{% static 'ventas/cobrar.js' %}" defer></script>{% endif %}{% endblock %}

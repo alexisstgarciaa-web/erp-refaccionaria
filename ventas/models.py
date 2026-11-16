@@ -45,6 +45,11 @@ class Cliente(models.Model):
     def __str__(self):
         return self.nombre
 
+    @property
+    def folio(self):
+        """Número de cliente para buscarlo en mostrador y remisiones: CTE-0012."""
+        return f"CTE-{self.pk:04d}" if self.pk else ""
+
     def save(self, *args, **kwargs):
         self.rfc = "".join((self.rfc or "").upper().split()) or RFC_GENERICO
         super().save(*args, **kwargs)
@@ -94,17 +99,27 @@ class Turno(models.Model):
 
 
 class Venta(models.Model):
+    """Una venta del mostrador (folio VTA) o una remisión hecha en Remisiones › Nueva (folio REM)."""
+
     class Estado(models.TextChoices):
         PAGADA = "PAGADA", "Pagada"
         CREDITO = "CREDITO", "A crédito"
+        POR_COBRAR = "POR_COBRAR", "Por cobrar en caja"
         CANCELADA = "CANCELADA", "Cancelada"
+
+    class Origen(models.TextChoices):
+        MOSTRADOR = "MOSTRADOR", "Mostrador"
+        REMISION = "REMISION", "Remisión"
 
     folio = models.CharField(max_length=20, unique=True)
     fecha = models.DateTimeField(auto_now_add=True, db_index=True)
-    turno = models.ForeignKey(Turno, on_delete=models.PROTECT, related_name="ventas")
+    origen = models.CharField(max_length=10, choices=Origen.choices, default=Origen.MOSTRADOR)
+    turno = models.ForeignKey(Turno, on_delete=models.PROTECT, related_name="ventas", null=True, blank=True,
+                              help_text="Turno de caja donde entró el dinero; vacío en remisiones a crédito o sin cobrar")
     cliente = models.ForeignKey(Cliente, on_delete=models.PROTECT, related_name="ventas")
     lista = models.ForeignKey(ListaPrecio, on_delete=models.PROTECT)
-    forma_pago = models.CharField(max_length=10, choices=FormaPago.choices)
+    forma_pago = models.CharField(max_length=10, choices=FormaPago.choices, blank=True,
+                                  help_text="Vacía mientras una remisión de contado está por cobrar en caja")
     estado = models.CharField(max_length=10, choices=Estado.choices)
     total = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text="Con IVA")
     iva = models.DecimalField(max_digits=12, decimal_places=2, default=0)
@@ -119,12 +134,26 @@ class Venta(models.Model):
     cancelada_por = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT,
                                       related_name="+")
     motivo_cancelacion = models.CharField(max_length=200, blank=True)
+    orden_compra = models.CharField("orden de compra del cliente", max_length=40, blank=True)
+    observaciones = models.CharField(max_length=300, blank=True)
+    cobrada = models.DateTimeField(null=True, blank=True, help_text="Cuándo se cobró en caja una remisión de contado")
+    cobrada_por = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT,
+                                    related_name="+")
 
     class Meta:
         ordering = ["-fecha"]
 
     def __str__(self):
         return self.folio
+
+    @property
+    def es_remision(self):
+        return self.origen == self.Origen.REMISION
+
+    @property
+    def condiciones(self):
+        """Contado o crédito, aunque la de contado todavía no se cobre."""
+        return "Crédito" if self.forma_pago == FormaPago.CREDITO else "Contado"
 
     @property
     def margen(self):
@@ -139,7 +168,10 @@ class VentaLinea(models.Model):
     unidad = models.ForeignKey(UnidadMedida, on_delete=models.PROTECT)
     cantidad = models.DecimalField(max_digits=12, decimal_places=3)
     cantidad_base = models.DecimalField(max_digits=12, decimal_places=3)
-    precio_unitario = models.DecimalField(max_digits=12, decimal_places=2, help_text="Con IVA, por la unidad vendida")
+    precio_unitario = models.DecimalField(max_digits=12, decimal_places=2,
+                                          help_text="Con IVA, por la unidad vendida, ya con el descuento")
+    descuento = models.DecimalField(max_digits=5, decimal_places=2, default=0,
+                                    help_text="% de descuento que ya trae el precio unitario")
     importe = models.DecimalField(max_digits=12, decimal_places=2)
     costo_unitario = models.DecimalField(max_digits=12, decimal_places=4, help_text="Costo promedio sin IVA al vender")
 
@@ -321,3 +353,32 @@ class CodigoPostal(models.Model):
 
     def __str__(self):
         return f"{self.cp} {self.colonia}, {self.municipio}, {self.estado}"
+
+
+class RemisionBorrador(models.Model):
+    """Remisión que se está armando en Remisiones › Nueva. Se guarda tal cual se tecleó para seguirla
+    después; al emitirla se vuelve una Venta con folio REM y el borrador se borra."""
+
+    class Condiciones(models.TextChoices):
+        CONTADO = "CONTADO", "Contado"
+        CREDITO = "CREDITO", "Crédito"
+
+    creado = models.DateTimeField(auto_now_add=True)
+    actualizado = models.DateTimeField(auto_now=True)
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    cliente = models.ForeignKey(Cliente, null=True, blank=True, on_delete=models.PROTECT, related_name="borradores")
+    condiciones = models.CharField(max_length=10, choices=Condiciones.choices, default=Condiciones.CONTADO)
+    orden_compra = models.CharField(max_length=40, blank=True)
+    vehiculo = models.CharField(max_length=120, blank=True)
+    observaciones = models.CharField(max_length=300, blank=True)
+    lineas = models.JSONField(default=list, blank=True,
+                              help_text="[{clave, codigo, descripcion, existencia, cantidad, precio, descuento}] como se teclearon")
+    total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    class Meta:
+        ordering = ["-actualizado"]
+        verbose_name = "borrador de remisión"
+        verbose_name_plural = "borradores de remisión"
+
+    def __str__(self):
+        return f"Borrador {self.pk}"

@@ -19,7 +19,7 @@
   <nav class="secciones" aria-label="Secciones">
     {% url 'mostrador' as u_mostrador %}{% url 'caja' as u_caja %}
     <a href="{{ u_mostrador }}"{% if request.path == u_mostrador %} aria-current="page"{% endif %}>Mostrador</a>
-    <a href="{{ u_caja }}"{% if request.path == u_caja %} aria-current="page"{% endif %}>Caja</a>
+    <a href="{{ u_caja }}"{% if request.path == u_caja %} aria-current="page"{% endif %}>Caja{% if remisiones_por_cobrar %} <span class="insignia" title="Remisiones de contado por cobrar">{{ remisiones_por_cobrar }}</span>{% endif %}</a>
     {% url 'remisiones' as u_remisiones %}<a href="{{ u_remisiones }}"{% if request.path|slice:":12" == "/remisiones/" or request.path|slice:":14" == "/cotizaciones/" or request.path|slice:":14" == "/devoluciones/" %} aria-current="page"{% endif %}>Remisiones</a>
     {% url 'pedidos' as u_pedidos %}<a href="{{ u_pedidos }}"{% if request.path == u_pedidos %} aria-current="page"{% endif %}>Pedidos{% if pedidos_listos %} <span class="insignia" title="Ya llegaron: hay que avisar">{{ pedidos_listos }}</span>{% endif %}</a>
     {% if user.is_staff %}<a href="{% url 'admin:index' %}">Administración</a>{% endif %}

@@ -1,0 +1,35 @@
+{% extends "ventas/base.html" %}
+{% load erp %}
+{% block titulo %}Borradores de remisión{% endblock %}
+{% block contenido %}
+<header class="pagina-titulo con-accion">
+  <div>
+    <h1>Remisiones</h1>
+    <p>Remisiones que se guardaron sin emitir. Ábrelas para seguirlas; al emitirlas toman folio y salen del inventario.</p>
+  </div>
+  <a class="btn-primario" href="{% url 'remision_nueva' %}">Nueva remisión</a>
+</header>
+{% include "ventas/_pestanas.html" with pestana="borradores" %}
+<section class="panel bloque">
+  <table class="tabla tabla-borradores">
+    <thead><tr><th>Borrador</th><th>Guardado</th><th>Cliente</th><th>Partidas</th><th class="num">Total</th><th></th></tr></thead>
+    <tbody>
+      {% for b in borradores %}
+      <tr>
+        <td><a class="folio" href="{% url 'remision_borrador' b.pk %}">Borrador {{ b.pk }}</a></td>
+        <td>{{ b.actualizado|date:"j M Y, H:i" }}{% if b.usuario %} <small class="tenue">{{ b.usuario.get_short_name|default:b.usuario.get_username }}</small>{% endif %}</td>
+        <td>{% if b.cliente %}{{ b.cliente }} <small class="tenue">{{ b.cliente.folio }}</small>{% else %}<span class="tenue">Sin cliente</span>{% endif %}{% if b.orden_compra %} <small class="tenue">· OC {{ b.orden_compra }}</small>{% endif %}</td>
+        <td>{{ b.lineas|length }}</td>
+        <td class="num">{{ b.total|pesos }}</td>
+        <td class="num acciones-remision">
+          <a href="{% url 'remision_borrador' b.pk %}">Seguir</a>
+          <form method="post" action="{% url 'remision_borrador_borrar' b.pk %}" class="en-linea">{% csrf_token %}<button type="submit" class="enlace">Borrar</button></form>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="6" class="tenue">No hay borradores. «Guardar borrador» en una remisión nueva la deja aquí.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

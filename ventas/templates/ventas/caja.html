@@ -1,5 +1,5 @@
 {% extends "ventas/base.html" %}
-{% load erp %}
+{% load erp static %}
 {% block titulo %}Caja{% endblock %}
 {% block contenido %}
 <header class="pagina-titulo">
@@ -19,6 +19,27 @@
     </tbody>
   </table>
   <p style="margin: 16px 0 0">Diferencia total: <span class="cifra-grande {% if corte.diferencia < 0 %}rojo{% elif corte.diferencia > 0 %}verde{% endif %}">{{ corte.diferencia|pesos }}</span></p>
+</section>
+{% endif %}
+
+{% if por_cobrar %}
+<section class="panel bloque caja-por-cobrar" id="por-cobrar">
+  <h2>Remisiones por cobrar <small>{{ por_cobrar|length }}</small></h2>
+  <p>Remisiones de contado que ya salieron del inventario y falta cobrar. Lo cobrado entra al corte de tu turno.</p>
+  <ul class="por-cobrar-lista">
+    {% for v in por_cobrar %}
+    <li>
+      <div class="por-cobrar-dato">
+        <a class="folio" href="{% url 'venta' v.folio %}">{{ v.folio }}</a>
+        <span>{{ v.cliente }} <span class="mono tenue">{{ v.cliente.folio }}</span></span>
+        <small class="tenue">{{ v.fecha|date:"j M, H:i" }}{% if v.usuario %} · {{ v.usuario.get_short_name|default:v.usuario.get_username }}{% endif %}{% if v.orden_compra %} · OC {{ v.orden_compra }}{% endif %}</small>
+        <b class="por-cobrar-total">{{ v.total|pesos }}</b>
+      </div>
+      {% if turno %}{% include "ventas/_cobrar_remision.html" with formas=formas desde="caja" %}{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% if not turno %}<p class="tenue">Abre la caja para cobrarlas.</p>{% endif %}
 </section>
 {% endif %}
 
@@ -60,3 +81,4 @@
 </section>
 {% endif %}
 {% endblock %}
+{% block scripts %}{% if por_cobrar and turno %}<script src="{% static 'ventas/cobrar.js' %}" defer></script>{% endif %}{% endblock %}

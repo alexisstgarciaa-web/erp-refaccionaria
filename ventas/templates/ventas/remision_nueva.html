@@ -1,0 +1,95 @@
+{% extends "ventas/base.html" %}
+{% load erp static %}
+{% block titulo %}{% if borrador %}Borrador {{ borrador.pk }}{% else %}Nueva remisión{% endif %}{% endblock %}
+{% block contenido %}
+<p class="migas"><a href="{% url 'remisiones' %}">‹ Remisiones</a>{% if borrador %} · <a href="{% url 'remision_borradores' %}">Borradores</a>{% endif %}</p>
+<header class="pagina-titulo">
+  <h1>{% if borrador %}Borrador {{ borrador.pk }}{% else %}Nueva remisión{% endif %}</h1>
+  <p>{% if borrador %}Guardado {{ borrador.actualizado|date:"j M Y, H:i" }}{% if borrador.usuario %} por {{ borrador.usuario.get_short_name|default:borrador.usuario.get_username }}{% endif %}. {% endif %}Al emitirla toma folio REM, sale del inventario y se imprime con firma de recibido. De contado la cobra Caja; a crédito pasa a Por cobrar.</p>
+</header>
+
+<section class="panel bloque rem-cliente" aria-labelledby="rem-cliente-titulo">
+  <h2 id="rem-cliente-titulo">Cliente</h2>
+  <div class="rem-buscar">
+    <label class="campo" for="rem-cliente-q">Folio de cliente, celular o nombre</label>
+    <div class="rem-buscar-campo">
+      <input id="rem-cliente-q" autocomplete="off" spellcheck="false" placeholder="CTE-0012, 442 123 4567 o Taller Ramírez"
+             role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="rem-clientes"
+             data-buscar="{% url 'clientes_buscar' %}"{% if not cliente_actual %} autofocus{% endif %}>
+      <div class="sugerencias" id="rem-clientes" role="listbox" aria-label="Clientes" hidden></div>
+    </div>
+  </div>
+  <div class="rem-ficha" id="rem-ficha"{% if not cliente_actual %} hidden{% endif %} aria-live="polite">
+    {% if cliente_actual %}{% with c=cliente_actual %}
+    <p class="rem-ficha-nombre"><b>{{ c.nombre }}</b> <span class="mono">{{ c.folio }}</span></p>
+    <p>RFC {{ c.rfc }}{% if c.telefono %} · Tel. {{ c.telefono }}{% endif %} · lista {{ c.lista }}</p>
+    {% for renglon in c.domicilio %}<p class="tenue">{{ renglon }}</p>{% empty %}<p class="tenue">Sin dirección</p>{% endfor %}
+    <p class="rn-credito">{% if c.dias_credito %}Crédito {{ c.dias_credito }} días · límite {{ c.limite }} · debe {{ c.saldo }} · <b>disponible {{ c.disponible_txt }}</b>{% else %}Solo contado{% endif %}</p>
+    {% endwith %}{% endif %}
+  </div>
+  <div class="rem-cliente-nuevo">
+    {% url 'remision_nueva' as u_nueva %}
+    {% include "ventas/_cliente_nuevo.html" with para="remision" %}
+    <p class="tenue rem-nota">Da de alta al cliente antes de capturar las partidas, o guarda el borrador primero.</p>
+  </div>
+</section>
+
+<form method="post" class="remision-form" id="remision-form" data-nip="vendedor" data-nip-para="Emitir la remisión"
+      data-precios="{% url 'remision_precios' %}" data-sugerir="{% url 'ticket_sugerir' %}">{% csrf_token %}
+  <input type="hidden" name="cliente" id="rem-cliente" value="{{ cliente_actual.pk|default:'' }}"
+         data-dias="{{ cliente_actual.dias_credito|default:0 }}" data-disponible="{{ cliente_actual.disponible|default:0 }}">
+
+  <section class="panel bloque rem-condiciones">
+    <h2>Condiciones</h2>
+    <div class="rem-condiciones-campos">
+      <fieldset class="pagos abono-pagos rem-pago">
+        <legend class="sr">Condiciones de pago</legend>
+        <label><input type="radio" name="condiciones" value="CONTADO"{% if datos.condiciones != 'CREDITO' %} checked{% endif %}><span>Contado</span></label>
+        <label><input type="radio" name="condiciones" value="CREDITO"{% if datos.condiciones == 'CREDITO' %} checked{% endif %}{% if not cliente_actual.dias_credito %} disabled{% endif %}><span>Crédito</span></label>
+      </fieldset>
+      <label class="campo">Orden de compra del cliente <input name="orden_compra" value="{{ datos.orden_compra }}" maxlength="40" autocomplete="off" placeholder="Opcional"></label>
+      <label class="campo">Vehículo o unidad <input name="vehiculo" value="{{ datos.vehiculo }}" maxlength="120" autocomplete="off" placeholder="Opcional: Tsuru 2015, unidad 14"></label>
+      <label class="campo rem-obs">Observaciones <input name="observaciones" value="{{ datos.observaciones }}" maxlength="300" autocomplete="off" placeholder="Opcional: entregar en taller, recibe Juan"></label>
+    </div>
+  </section>
+
+  <section class="panel bloque rem-partidas">
+    <h2>Partidas</h2>
+    <p class="tenue">Teclea el código y elige con Enter; Enter pasa a Cantidad, Precio y Descuento, y al final abre otra partida. Precio vacío es el de la lista del cliente. Enter en un código vacío te lleva a Emitir.</p>
+    <div class="rn-tabla-caja">
+    <table class="tabla rn-tabla">
+      <thead><tr><th>Código</th><th>Descripción</th><th class="num">Hay</th><th class="num">Cant.</th><th class="num">Precio c/IVA</th><th class="num">Desc. %</th><th class="num">Importe</th><th><span class="sr">Quitar</span></th></tr></thead>
+      <tbody id="rem-filas">
+        {% for ln in lineas %}
+        <tr class="rem-fila">
+          <td class="rn-codigo"><input name="codigo" value="{{ ln.codigo }}" autocomplete="off" spellcheck="false" autocapitalize="characters" aria-label="Código"><input type="hidden" name="clave" value="{{ ln.clave }}"></td>
+          <td class="rem-desc"><span>{{ ln.descripcion }}</span><input type="hidden" name="descripcion" value="{{ ln.descripcion }}"></td>
+          <td class="num rem-hay"><span>{{ ln.existencia }}</span><input type="hidden" name="existencia" value="{{ ln.existencia }}"></td>
+          <td class="num"><input name="cantidad" value="{{ ln.cantidad }}" inputmode="decimal" autocomplete="off" aria-label="Cantidad"></td>
+          <td class="num"><input name="precio" value="{{ ln.precio }}" inputmode="decimal" data-cifra="pesos" autocomplete="off" aria-label="Precio con IVA" placeholder="De lista"></td>
+          <td class="num"><input name="descuento" value="{{ ln.descuento }}" inputmode="decimal" autocomplete="off" aria-label="Descuento %" placeholder="0"></td>
+          <td class="num rem-importe"></td>
+          <td><button type="button" class="rem-quitar" aria-label="Quitar partida" title="Quitar">×</button></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <div class="sugerencias rem-sugerencias" id="rem-sugerencias" role="listbox" aria-label="Productos" hidden></div>
+    <div class="rn-totales">
+      <dl>
+        <div><dt>Subtotal</dt><dd id="rem-subtotal">$0</dd></div>
+        <div><dt>IVA</dt><dd id="rem-iva">$0</dd></div>
+        <div class="rn-total"><dt>Total</dt><dd id="rem-total">$0</dd></div>
+      </dl>
+      <p class="rem-aviso-credito" id="rem-aviso-credito" hidden></p>
+    </div>
+  </section>
+
+  <div class="rem-botones">
+    <button class="btn-sec" type="submit" name="accion" value="borrador" data-sin-nip>Guardar borrador</button>
+    <button class="btn-primario" type="submit" name="accion" value="emitir" id="rem-emitir">Emitir remisión</button>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}<script src="{% static 'ventas/remision.js' %}" defer></script>{% endblock %}

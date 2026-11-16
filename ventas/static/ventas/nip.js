@@ -1,6 +1,7 @@
 // NIP: los formularios con data-nip piden el NIP en un cuadro antes de mandarse.
 // data-nip="vendedor" (quien lo hace) o "admin" (lo autoriza un administrador); data-nip-para dice qué se
-// autoriza; data-nip-cuando="campo" lo pide solo si ese campo trae un número mayor que cero.
+// autoriza; data-nip-cuando="campo" lo pide solo si ese campo trae un número mayor que cero. Un botón con
+// data-sin-nip manda el formulario sin pedirlo.
 // Se carga después de mostrador.js: si otra validación ya detuvo el envío (p. ej. «Paga con» no alcanza),
 // no se pide el NIP. El servidor siempre vuelve a revisarlo.
 (() => {
@@ -19,6 +20,7 @@
   document.addEventListener("submit", (e) => {
     const f = e.target;
     if (!(f instanceof HTMLFormElement) || !f.dataset.nip || e.defaultPrevented) return;
+    if (e.submitter && e.submitter.hasAttribute("data-sin-nip")) return; // p. ej. «Guardar borrador»
     const cuando = f.dataset.nipCuando && f.elements[f.dataset.nipCuando];
     if (cuando && !(parseFloat(String(cuando.value).replace(/[$,\s]/g, "")) > 0)) return;
     if (f.dataset.nipListo === "1") { delete f.dataset.nipListo; return; } // ya lo trae: que siga

@@ -10,7 +10,8 @@ from .models import Abono, Cliente, CodigoPostal, Nip, PedidoCliente, TicketGuar
 
 @admin.register(Cliente)
 class ClienteAdmin(ConComas, admin.ModelAdmin):
-    list_display = ["nombre", "rfc", "telefono", "municipio", "lista_precio", "dias_credito", "limite_credito", "activo"]
+    list_display = ["folio", "nombre", "rfc", "telefono", "municipio", "lista_precio", "dias_credito", "limite_credito", "activo"]
+    list_display_links = ["folio", "nombre"]
     search_fields = ["nombre", "rfc", "telefono", "colonia", "municipio"]
     list_filter = ["lista_precio", "activo", "estado"]
     fieldsets = [
@@ -22,6 +23,19 @@ class ClienteAdmin(ConComas, admin.ModelAdmin):
 
     class Media:
         js = ["ventas/cp.js"]
+
+    @admin.display(description="folio", ordering="pk")
+    def folio(self, obj):
+        return obj.folio
+
+    def get_search_results(self, request, queryset, search_term):
+        """«CTE-0012» o «cte12» busca por folio."""
+        from .remisiones import pk_de_folio
+
+        folio = pk_de_folio(search_term)
+        if folio is not None:
+            return queryset.filter(pk=folio), False
+        return super().get_search_results(request, queryset, search_term)
 
     def formfield_for_dbfield(self, db_field, request, **kwargs):
         campo = super().formfield_for_dbfield(db_field, request, **kwargs)
@@ -68,9 +82,9 @@ class AbonoInline(ConComas, admin.TabularInline):
 class VentaAdmin(ConComas, admin.ModelAdmin):
     """Las ventas se registran desde el mostrador; aquí solo se consultan."""
 
-    list_display = ["folio", "fecha", "cliente", "forma_pago", "estado", "total", "saldo"]
-    list_filter = ["estado", "forma_pago", "lista"]
-    search_fields = ["folio", "cliente__nombre"]
+    list_display = ["folio", "fecha", "cliente", "origen", "forma_pago", "estado", "total", "saldo"]
+    list_filter = ["estado", "origen", "forma_pago", "lista"]
+    search_fields = ["folio", "cliente__nombre", "orden_compra"]
     inlines = [LineaInline, AbonoInline]
     readonly_fields = [f.name for f in Venta._meta.fields]
 

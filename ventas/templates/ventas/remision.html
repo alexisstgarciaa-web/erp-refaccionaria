@@ -17,7 +17,7 @@
     <a href="?formato=carta"{% if formato == 'carta' %} aria-current="true"{% endif %}>Hoja carta</a>
     <a href="?formato=ticket"{% if formato == 'ticket' %} aria-current="true"{% endif %}>Ticket 80 mm</a>
   </span>
-  <a href="{% url 'mostrador' %}">Volver al mostrador</a>
+  {% if venta.es_remision %}<a href="{% url 'venta' venta.folio %}">Volver a {{ venta.folio }}</a>{% else %}<a href="{% url 'mostrador' %}">Volver al mostrador</a>{% endif %}
 </nav>
 
 <article class="remision{% if venta.estado == 'CANCELADA' %} cancelada{% endif %}">
@@ -40,9 +40,10 @@
   </header>
 
   <dl class="rem-datos">
-    <div><dt>Cliente</dt><dd>{{ venta.cliente }}{% if venta.cliente.rfc %} · RFC {{ venta.cliente.rfc }}{% endif %}{% if venta.cliente.telefono %} · Tel. {{ venta.cliente.telefono }}{% endif %}{% for renglon in venta.cliente.domicilio %}<span class="rem-domicilio">{{ renglon }}</span>{% endfor %}</dd></div>
+    <div><dt>Cliente</dt><dd>{{ venta.cliente }}{% if venta.es_remision %} · {{ venta.cliente.folio }}{% endif %}{% if venta.cliente.rfc %} · RFC {{ venta.cliente.rfc }}{% endif %}{% if venta.cliente.telefono %} · Tel. {{ venta.cliente.telefono }}{% endif %}{% for renglon in venta.cliente.domicilio %}<span class="rem-domicilio">{{ renglon }}</span>{% endfor %}</dd></div>
     {% if venta.vehiculo %}<div><dt>Vehículo</dt><dd>{{ venta.vehiculo }}</dd></div>{% endif %}
-    <div><dt>Pago</dt><dd>{{ venta.get_forma_pago_display }}{% if venta.estado == 'CREDITO' %} · {{ venta.cliente.dias_credito }} días, vence {{ venta.vence|date:"j M Y" }}{% endif %}</dd></div>
+    {% if venta.orden_compra %}<div><dt>Su orden de compra</dt><dd class="rem-codigo">{{ venta.orden_compra }}</dd></div>{% endif %}
+    <div><dt>Pago</dt><dd>{% if venta.estado == 'POR_COBRAR' %}Contado · pendiente de pago en caja{% elif not venta.forma_pago %}Contado{% else %}{{ venta.get_forma_pago_display }}{% endif %}{% if venta.estado == 'CREDITO' %} · {{ venta.cliente.dias_credito }} días, vence {{ venta.vence|date:"j M Y" }}{% endif %}</dd></div>
     <div><dt>Atendió</dt><dd>{{ venta.usuario.get_short_name|default:venta.usuario.get_username|default:"—" }}</dd></div>
   </dl>
 
@@ -54,7 +55,7 @@
         <td class="num">{{ ln.cantidad|cant }} <small>{{ ln.unidad.clave }}</small></td>
         <td class="rem-codigo">{{ ln.producto.numero_parte|default:ln.producto.sku }}</td>
         <td>{{ ln.producto.nombre }} <small>{{ ln.producto.marca }}</small></td>
-        <td class="num">{{ ln.precio_unitario|pesos }}</td>
+        <td class="num">{{ ln.precio_unitario|pesos }}{% if ln.descuento %}<small class="rem-desc-nota">desc. {{ ln.descuento|cant }}%</small>{% endif %}</td>
         <td class="num">{{ ln.importe|pesos }}</td>
       </tr>
       {% endfor %}
@@ -63,6 +64,8 @@
 
   <div class="rem-pie">
     <div class="rem-notas">
+      {% if venta.observaciones %}<p class="rem-observaciones"><b>Observaciones.</b> {{ venta.observaciones }}</p>{% endif %}
+      {% if venta.estado == 'POR_COBRAR' %}<p class="rem-credito"><b>Pendiente de pago.</b> Se paga en caja: {{ venta.total|pesos }}.</p>{% endif %}
       {% if venta.estado == 'CREDITO' %}
       <p class="rem-credito"><b>A crédito.</b> Saldo {{ venta.saldo|pesos }}{% if abonado %} (abonado {{ abonado|pesos }}){% endif %}. Vence el {{ venta.vence|date:"j \d\e F \d\e Y" }}.</p>
       {% endif %}

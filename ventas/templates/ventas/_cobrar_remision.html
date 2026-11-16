@@ -1,0 +1,13 @@
+{% load erp %}{# Caja cobra una remisión de contado que quedó pendiente. Recibe v (la venta), formas y desde. #}
+<form method="post" action="{% url 'remision_cobrar' v.folio %}" class="cobrar-rem" data-nip="vendedor"
+      data-nip-para="Cobrar {{ v.folio }} por {{ v.total|pesos }}" data-total="{{ v.total|stringformat:'.2f' }}">{% csrf_token %}
+  {% if desde %}<input type="hidden" name="desde" value="{{ desde }}">{% endif %}
+  <div class="pagos abono-pagos" role="radiogroup" aria-label="Cómo paga {{ v.folio }}">
+    {% for valor, nombre in formas %}
+    <label><input type="radio" name="forma_pago" value="{{ valor }}"{% if forloop.first %} checked{% endif %}><span>{{ nombre }}</span></label>
+    {% endfor %}
+  </div>
+  <label class="campo cobrar-rem-paga">Paga con <span class="con-signo"><input name="paga_con" inputmode="decimal" data-cifra="pesos" autocomplete="off" placeholder="{{ v.total|miles }}"></span>
+    <small class="cobrar-rem-cambio" aria-live="polite"></small></label>
+  <button class="btn" type="submit">Cobrar {{ v.total|pesos }}</button>
+</form>
