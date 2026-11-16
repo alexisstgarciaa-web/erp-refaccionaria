@@ -249,6 +249,44 @@ class MostradorTests(TestCase):
         self.assertEqual(venta.total, D("231.00"))
         self.assertEqual((venta.pedido[0]["codigo"], venta.pedido[0]["precio"]), ("GP-37", "130.00"))
 
+    def test_vaciar_y_deshacer(self):
+        clave = f"producto:{self.fram.pk}"
+        self.client.post(reverse("ticket_agregar"), {"clave": clave})
+        self.assertContains(self.client.get("/"), "Vaciar ticket")
+        self.client.post(reverse("ticket_vaciar"))
+        self.assertEqual(self.client.session["ticket"]["lineas"], [])
+        self.assertContains(self.client.get("/"), "Vaciaste el ticket.")
+        self.client.post(reverse("ticket_deshacer"))
+        self.assertEqual([ln["clave"] for ln in self.client.session["ticket"]["lineas"]], [clave])
+        # si después de vaciar ya empezó otro ticket, no se ofrece deshacer
+        self.client.post(reverse("ticket_vaciar"))
+        self.client.post(reverse("ticket_codigo"), {"codigo": "GP-37"})
+        self.assertNotContains(self.client.get("/"), "Vaciaste el ticket.")
+
+    def test_paga_con_cambio_y_foco(self):
+        r = self.client.get("/")
+        self.assertRegex(r.content.decode(), r'id="codigo"[^>]*autofocus')  # se empieza por el código
+        self.assertNotRegex(r.content.decode(), r'id="q"[^>]*autofocus')
+        self.client.post(reverse("caja"), {"accion": "abrir", "fondo": "500"})
+        self.client.post(reverse("ticket_agregar"), {"clave": f"producto:{self.fram.pk}"})
+        self.assertContains(self.client.get("/"), 'id="paga-con"')
+        # no alcanza: no cobra
+        r = self.client.post(reverse("ticket_cobrar"), {"forma_pago": "EFECTIVO", "paga_con": "50"}, follow=True)
+        self.assertContains(r, "Paga con $50 y son $98: faltan $48.")
+        self.assertFalse(Venta.objects.exists())
+        r = self.client.post(reverse("ticket_cobrar"), {"forma_pago": "EFECTIVO", "paga_con": "200"}, follow=True)
+        self.assertContains(r, "Cambio $102")
+        self.assertEqual(Venta.objects.get().total, D("98"))
+
+    def test_credito_preseleccionado(self):
+        taller = Cliente.objects.create(nombre="Taller Ramírez", lista_precio=self.mostrador, dias_credito=15,
+                                        limite_credito=3000)
+        self.client.post(reverse("ticket_cliente"), {"cliente": taller.pk})
+        self.client.post(reverse("ticket_agregar"), {"clave": f"producto:{self.fram.pk}"})
+        html = self.client.get("/").content.decode()
+        self.assertRegex(html, r'value="CREDITO" checked')
+        self.assertNotRegex(html, r'value="EFECTIVO" checked')
+
     def test_leer_captura(self):
         self.assertEqual(m.leer_captura("4*PH966B"), ("PH966B", D("4")))
         self.assertEqual(m.leer_captura("3 x GP-37"), ("GP-37", D("3")))

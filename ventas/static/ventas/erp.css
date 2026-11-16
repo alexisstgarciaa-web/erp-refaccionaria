@@ -550,3 +550,66 @@ body.doc { background: #D9D9D4; padding-bottom: 40px; }
   .mesa.sin-ficha .renglon.reciente { margin: 0 -24px; padding: 12px 24px 12px 20px; }
   .mesa.sin-ficha .ticket-pedido { margin-top: 18px; }
 }
+
+/* Vaciar ticket y deshacer */
+.ticket-cabeza span { margin-left: auto; }
+.ticket-vaciar { margin: 0 0 0 14px; }
+.ticket-vaciar button { all: unset; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--primario); text-decoration: underline; text-underline-offset: 3px; }
+.ticket-vaciar button:focus-visible { outline: 2px solid var(--primario); outline-offset: 2px; }
+.ticket-deshacer { margin: 12px 0 0; padding: 10px 12px; display: flex; align-items: center; gap: 10px; background: var(--superficie-2);
+  border-left: 4px solid var(--texto); font-size: 14px; }
+.ticket-deshacer button { all: unset; cursor: pointer; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.ticket-deshacer button:focus-visible { outline: 2px solid var(--primario); outline-offset: 2px; }
+
+/* Paga con y cambio (efectivo) */
+.paga-con { display: grid; gap: 4px; margin: 0; }
+.paga-con[hidden] { display: none; }
+.paga-con > span:first-child { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--cobro-texto-2); }
+.paga-con input { width: 136px; height: 46px; padding-left: 30px; text-align: right; background: #1C1D20; border-color: #34353A; color: #fff;
+  font: 600 18px var(--f-mono); }
+.paga-con input::placeholder { color: #6E6E68; }
+.paga-con small { min-height: 16px; font-size: 13px; font-weight: 700; color: #45D483; white-space: nowrap; }
+.paga-con small.faltan { color: #FF6B66; }
+.recien > .recien-cambio { flex: 0 0 auto; min-width: 0; align-items: flex-end; padding-right: 6px; }
+.recien-cambio span { font-size: 13px; color: var(--texto-3); }
+.recien-cambio b { font: italic 800 30px/1.1 var(--f-titulo); font-stretch: 115%; color: var(--hay); }
+
+/* Tablet vertical: el menú baja a su propia fila y las listas van de dos en dos */
+@media (max-width: 900px) {
+  .barra .dentro { flex-wrap: wrap; gap: 6px 16px; padding-block: 10px; }
+  .usuario { margin-left: auto; gap: 10px; }
+  .secciones { order: 3; width: 100%; overflow-x: auto; }
+  .selector { grid-template-columns: 1fr 1fr; }
+  .selector .btn-primario { grid-column: 1 / -1; }
+  .cobro-accion { flex-wrap: wrap; }
+}
+
+/* Teléfono: cada remisión como tarjeta, sin salirse de la pantalla */
+@media (max-width: 760px) {
+  .bloque { overflow-x: auto; }
+  .tabla-remisiones thead { display: none; }
+  .tabla-remisiones tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 12px 0; border-bottom: 1px solid var(--borde-2); }
+  .tabla-remisiones td { padding: 0; border: 0; text-align: left; }
+  .tabla-remisiones td:nth-child(1) { grid-area: 1 / 1; }
+  .tabla-remisiones td:nth-child(6) { grid-area: 1 / 2; text-align: right; font-weight: 700; }
+  .tabla-remisiones td:nth-child(2) { grid-area: 2 / 1; font-size: 13px; color: var(--texto-3); }
+  .tabla-remisiones td:nth-child(3) { grid-area: 3 / 1; }
+  .tabla-remisiones td:nth-child(4) { grid-area: 4 / 1; font-size: 13px; color: var(--texto-2); }
+  .tabla-remisiones td:nth-child(5) { grid-area: 5 / 1; font-size: 13px; color: var(--texto-2); }
+  .tabla-remisiones td:nth-child(7) { grid-area: 2 / 2 / 6 / 3; align-self: end; display: flex; flex-direction: column; gap: 6px; text-align: right; }
+  .tabla-remisiones td[colspan] { grid-column: 1 / -1; }
+}
+
+/* Barra de cobro en tablet vertical y teléfono: formas de pago arriba, total y Cobrar en medio, «Paga con» abajo */
+@media (max-width: 900px) {
+  .barra-cobro .dentro { grid-template-columns: auto 1fr; gap: 8px 14px; padding-block: 10px; }
+  .cobro-accion { display: contents; }
+  .pagos { grid-column: 1 / -1; grid-row: 1; }
+  .pagos label { flex: 1; }
+  .pagos span { text-align: center; }
+  .cobro-total { grid-row: 2; grid-column: 1; }
+  .cobrar { grid-row: 2; grid-column: 2; justify-self: end; }
+  .paga-con { grid-row: 3; grid-column: 1 / -1; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
+  .paga-con input { width: 100%; height: 40px; }
+  body.con-cobro { padding-bottom: 230px; }
+}

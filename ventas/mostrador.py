@@ -241,6 +241,7 @@ class Ticket:
         """precio: con IVA por unidad, cuando en mostrador se teclea uno distinto al de la lista.
         Devuelve el número de renglón que quedó con la pieza (para resaltarlo en el ticket)."""
         resolver(clave)  # valida que exista
+        self.session.pop("ticket_deshacer", None)  # ya empezó otro ticket
         p = POR_CLAVE.get(pos)
         cantidad = str(cantidad or (p.cantidad if p else 1))
         nivel = nivel if nivel in dict(NIVELES) else ""
@@ -288,9 +289,20 @@ class Ticket:
     def clave_de(self, i):
         return self.datos["lineas"][i]["clave"] if 0 <= i < len(self.datos["lineas"]) else None
 
-    def vaciar(self):
+    def vaciar(self, deshacer=False):
+        """deshacer: guarda lo que había para poder regresarlo (cuando lo vacían a mano)."""
+        if deshacer and self.datos["lineas"]:
+            self.session["ticket_deshacer"] = self.datos["lineas"]
         self.datos["lineas"] = []
         self.guardar()
+
+    def deshacer_vaciar(self):
+        lineas = self.session.pop("ticket_deshacer", None)
+        if lineas and not self.datos["lineas"]:
+            self.datos["lineas"] = lineas
+            self.guardar()
+            return True
+        return False
 
     def lineas(self, veh=None):
         lista = self.cliente.lista_precio

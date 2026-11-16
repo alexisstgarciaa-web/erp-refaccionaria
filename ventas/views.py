@@ -137,6 +137,8 @@ def mostrador(request):
     ctx["agregado"] = request.session.pop("agregado", None)
     folio = request.session.pop("ultima_venta", None)
     ctx["ultima_venta"] = Venta.objects.filter(folio=folio).first() if folio else None
+    ctx["ultimo_pago"] = request.session.pop("ultimo_pago", None)
+    ctx["puede_deshacer"] = bool(request.session.get("ticket_deshacer")) and not lineas
     return render(request, "ventas/mostrador.html", ctx)
 
 
@@ -358,6 +360,21 @@ def precio(request, i):
 
 @login_required
 @require_POST
+def vaciar(request):
+    m.Ticket(request.session).vaciar(deshacer=True)
+    return _volver(request)
+
+
+@login_required
+@require_POST
+def deshacer_vaciar(request):
+    if not m.Ticket(request.session).deshacer_vaciar():
+        messages.warning(request, "Ya no se puede deshacer: el ticket tiene otras piezas.")
+    return _volver(request)
+
+
+@login_required
+@require_POST
 def cliente(request):
     try:
         m.Ticket(request.session).elegir_cliente(int(request.POST["cliente"]))
@@ -379,14 +396,24 @@ def cobrar(request):
         litros = request.POST.get("litros", "")
         veh = m.Vehiculo(int(request.POST["anio"]), request.POST.get("armadora", ""), request.POST.get("modelo", ""),
                          "" if litros == "todos" else litros)
+    forma = request.POST.get("forma_pago", FormaPago.EFECTIVO)
+    # efectivo: con cuánto paga, para dar el cambio (opcional)
+    paga_con = _decimal(request.POST.get("paga_con")) if forma == FormaPago.EFECTIVO else None
+    if paga_con is not None:
+        por_cobrar = sum((ln.importe for ln in ticket.lineas(veh) if not ln.sobre_pedido), Decimal(0))
+        if paga_con < por_cobrar:
+            messages.error(request, f"Paga con {pesos(paga_con)} y son {pesos(por_cobrar)}: faltan {pesos(por_cobrar - paga_con)}.")
+            return _volver(request)
     try:
-        venta, ordenes = m.cobrar(ticket, turno, request.POST.get("forma_pago", FormaPago.EFECTIVO), request.user, veh)
+        venta, ordenes = m.cobrar(ticket, turno, forma, request.user, veh)
     except ValidationError as e:
         messages.error(request, " ".join(e.messages))
         return _volver(request)
     partes = []
     if venta:
         request.session["ultima_venta"] = venta.folio
+        if paga_con is not None:
+            request.session["ultimo_pago"] = {"recibio": pesos(paga_con), "cambio": pesos(paga_con - venta.total)}
         partes.append(f"Venta {venta.folio} por ${venta.total:,.2f} con {venta.get_forma_pago_display().lower()}.")
     for oc in ordenes:
         partes.append(f"Quedó pedido a {oc.proveedor} en {oc.folio} (borrador, compra de emergencia).")

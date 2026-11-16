@@ -46,7 +46,7 @@
   <form class="buscador" method="get" action="{% url 'mostrador' %}" role="search">
     <label for="q">O escríbelo</label>
     <div class="buscador-campo">
-      <input id="q" name="q" placeholder="Ej. tsuru 2003" autocomplete="off"{% if paso == 'marca' and not enfocar_codigo %} autofocus{% endif %}>
+      <input id="q" name="q" placeholder="Ej. tsuru 2003" autocomplete="off">
       <button type="submit">Buscar</button>
     </div>
   </form>
@@ -68,7 +68,7 @@
     <label for="codigo">Código o descripción</label>
     <input name="codigo" id="codigo" autocomplete="off" autocapitalize="characters" spellcheck="false"
            role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sugerencias"
-           placeholder="Escanea o teclea: PH966B, GP-37, filtro aire jetta"{% if enfocar_codigo %} autofocus{% endif %}>
+           placeholder="Escanea o teclea: PH966B, GP-37, filtro aire jetta"{% if enfocar_codigo or paso == 'marca' or paso == 'ficha' %} autofocus{% endif %}>
     <div class="sugerencias" id="sugerencias" role="listbox" aria-label="Sugerencias" hidden></div>
   </div>
   <div class="captura-cantidad">
@@ -88,7 +88,7 @@
     {% if agregado.pedido %}<span class="estado pedido">Sobre pedido</span>{% endif %}
   </p>
   {% endif %}
-  <p class="captura-ayuda"><b>Enter</b> avanza: código › cantidad › precio › agrega · <b>↑ ↓</b> eligen sugerencia · <b>F2</b> regresa aquí · <b>Esc</b> cierra</p>
+  <p class="captura-ayuda"><b>Enter</b> avanza: código › cantidad › precio › agrega · <b>↑ ↓</b> eligen sugerencia · <b>F2</b> regresa aquí · <b>F9</b> cobra</p>
 </form>
 
 {% if ultima_venta %}
@@ -98,6 +98,7 @@
     <b>{{ ultima_venta.folio }} · {{ ultima_venta.total|pesos }} · {{ ultima_venta.get_forma_pago_display }}</b>
     <span>{{ ultima_venta.cliente }}{% if ultima_venta.vehiculo %} · {{ ultima_venta.vehiculo }}{% endif %}</span>
   </div>
+  {% if ultimo_pago %}<div class="recien-cambio"><span>Recibió {{ ultimo_pago.recibio }}</span><b>Cambio {{ ultimo_pago.cambio }}</b></div>{% endif %}
   <a class="btn-primario" href="{% url 'remision' ultima_venta.folio %}?imprimir=1" target="_blank" rel="noopener">Imprimir remisión</a>
   <a class="btn-sec" href="{% url 'remision' ultima_venta.folio %}?formato=ticket&amp;imprimir=1" target="_blank" rel="noopener">Ticket 80 mm</a>
 </section>
