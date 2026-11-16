@@ -40,7 +40,7 @@
   </header>
 
   <dl class="rem-datos">
-    <div><dt>Cliente</dt><dd>{{ venta.cliente }}{% if venta.cliente.rfc %} · RFC {{ venta.cliente.rfc }}{% endif %}{% if venta.cliente.telefono %} · Tel. {{ venta.cliente.telefono }}{% endif %}</dd></div>
+    <div><dt>Cliente</dt><dd>{{ venta.cliente }}{% if venta.cliente.rfc %} · RFC {{ venta.cliente.rfc }}{% endif %}{% if venta.cliente.telefono %} · Tel. {{ venta.cliente.telefono }}{% endif %}{% for renglon in venta.cliente.domicilio %}<span class="rem-domicilio">{{ renglon }}</span>{% endfor %}</dd></div>
     {% if venta.vehiculo %}<div><dt>Vehículo</dt><dd>{{ venta.vehiculo }}</dd></div>{% endif %}
     <div><dt>Pago</dt><dd>{{ venta.get_forma_pago_display }}{% if venta.estado == 'CREDITO' %} · {{ venta.cliente.dias_credito }} días, vence {{ venta.vence|date:"j M Y" }}{% endif %}</dd></div>
     <div><dt>Atendió</dt><dd>{{ venta.usuario.get_short_name|default:venta.usuario.get_username|default:"—" }}</dd></div>
@@ -70,7 +70,7 @@
       <div class="rem-pedido">
         <b>Quedó sobre pedido · se cobra al entregar</b>
         <table>
-          {% for p in pedido %}<tr><td>{{ p.cantidad }} ×</td><td class="rem-codigo">{{ p.codigo }}</td><td>{{ p.descripcion }}</td><td class="num">{{ p.importe|pesos }}</td></tr>{% endfor %}
+          {% for p in pedido %}<tr><td>{{ p.cantidad|cant }} ×</td><td class="rem-codigo">{{ p.codigo }}</td><td>{{ p.descripcion }}</td><td class="num">{{ p.importe|pesos }}</td></tr>{% endfor %}
         </table>
         <span>Cotizado {{ pedido_total|pesos }}, IVA incluido.</span>
       </div>

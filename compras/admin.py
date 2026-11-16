@@ -8,6 +8,8 @@ from django.shortcuts import redirect, render
 from django.urls import path
 from django.utils import timezone
 
+from ventas.cifras import ConComas
+
 from . import models as m
 
 
@@ -38,20 +40,20 @@ class ImportarListaForm(forms.Form):
     archivos = CampoVariosArchivos(label="Archivos .xlsx")
 
 
-class ProductoProveedorInline(admin.TabularInline):
+class ProductoProveedorInline(ConComas, admin.TabularInline):
     model = m.ProductoProveedor
     extra = 0
     autocomplete_fields = ["producto"]
 
 
 @admin.register(m.Proveedor)
-class ProveedorAdmin(admin.ModelAdmin):
+class ProveedorAdmin(ConComas, admin.ModelAdmin):
     list_display = ["nombre", "rfc", "dias_credito", "tiempo_entrega_dias", "activo"]
     search_fields = ["nombre", "rfc"]
     inlines = [ProductoProveedorInline]
 
 
-class LineaInline(admin.TabularInline):
+class LineaInline(ConComas, admin.TabularInline):
     model = m.OrdenCompraLinea
     extra = 1
     readonly_fields = ["cantidad_recibida"]
@@ -59,7 +61,7 @@ class LineaInline(admin.TabularInline):
 
 
 @admin.register(m.OrdenCompra)
-class OrdenCompraAdmin(admin.ModelAdmin):
+class OrdenCompraAdmin(ConComas, admin.ModelAdmin):
     list_display = ["folio", "proveedor", "fecha", "estado", "es_emergencia"]
     list_filter = ["estado", "es_emergencia", "proveedor"]
     search_fields = ["folio"]
@@ -84,7 +86,7 @@ class OrdenCompraAdmin(admin.ModelAdmin):
                 self.message_user(request, f"{oc.folio}: {' '.join(e.messages)}", messages.ERROR)
 
 
-class VehiculoPartidaInline(admin.TabularInline):
+class VehiculoPartidaInline(ConComas, admin.TabularInline):
     model = m.AplicacionProveedor
     extra = 0
     can_delete = False
@@ -96,7 +98,7 @@ class VehiculoPartidaInline(admin.TabularInline):
 
 
 @admin.register(m.PartidaListaProveedor)
-class PartidaListaProveedorAdmin(admin.ModelAdmin):
+class PartidaListaProveedorAdmin(ConComas, admin.ModelAdmin):
     list_display = ["codigo", "marca", "tipo", "costo", "proveedor", "fecha_lista", "producto"]
     list_filter = ["proveedor", "tipo", "marca"]
     search_fields = ["codigo", "equivalencia", "aplicacion", "marca"]
@@ -150,7 +152,7 @@ class PartidaListaProveedorAdmin(admin.ModelAdmin):
 
 
 @admin.register(m.AplicacionProveedor)
-class AplicacionProveedorAdmin(admin.ModelAdmin):
+class AplicacionProveedorAdmin(ConComas, admin.ModelAdmin):
     list_display = ["armadora", "modelo", "motor", "anio_desde", "anio_hasta", "partida"]
     list_filter = ["armadora", "partida__tipo"]
     search_fields = ["modelo", "modelo_base", "partida__codigo"]

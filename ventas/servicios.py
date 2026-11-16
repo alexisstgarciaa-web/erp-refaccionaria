@@ -13,6 +13,7 @@ from inventario.models import Movimiento
 from inventario.servicios import registrar_entrada, registrar_salida
 
 from .models import Abono, Cliente, Devolucion, DevolucionLinea, FormaPago, Turno, Venta, VentaLinea
+from .templatetags.erp import pesos
 
 CENT = Decimal("0.01")
 IVA = Decimal("0.16")
@@ -83,7 +84,7 @@ def registrar_venta(turno, cliente, partidas, forma_pago, usuario=None):
             raise ValidationError(f"{cliente} no tiene crédito autorizado.")
         disponible = cliente.limite_credito - cliente.saldo()
         if total > disponible:
-            raise ValidationError(f"La venta de ${total} excede el crédito disponible de {cliente} (${disponible}).")
+            raise ValidationError(f"La venta de {pesos(total)} excede el crédito disponible de {cliente} ({pesos(disponible)}).")
         venta.estado, venta.saldo = Venta.Estado.CREDITO, total
         venta.vence = timezone.localdate() + timedelta(days=cliente.dias_credito)
     venta.total, venta.iva, venta.costo_total = total, _m(total - total / (1 + IVA)), _m(costo)
@@ -139,7 +140,7 @@ def registrar_abono(venta, monto, forma_pago, turno, usuario=None):
     if venta.estado != Venta.Estado.CREDITO:
         raise ValidationError(f"{venta.folio} no tiene saldo pendiente.")
     if monto <= 0 or monto > venta.saldo:
-        raise ValidationError(f"El abono debe ser mayor a 0 y hasta ${venta.saldo}.")
+        raise ValidationError(f"El abono debe ser mayor a 0 y hasta {pesos(venta.saldo)}.")
     if forma_pago == FormaPago.CREDITO:
         raise ValidationError("Un abono no puede ser a crédito.")
     abono = Abono.objects.create(venta=venta, turno=turno, monto=monto, forma_pago=forma_pago, usuario=usuario)

@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.validators import RegexValidator
 from django.db import models
 from django.db.models import Sum
 
@@ -14,10 +15,25 @@ class FormaPago(models.TextChoices):
     CREDITO = "CREDITO", "Crédito"
 
 
+RFC_GENERICO = "XAXX010101000"  # público en general (SAT)
+rfc_valido = RegexValidator(r"^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$",
+                            "El RFC va como XAXX010101000: 3 o 4 letras, 6 números de la fecha y 3 de homoclave.")
+cp_valido = RegexValidator(r"^\d{5}$", "El código postal lleva 5 números.")
+
+
 class Cliente(models.Model):
     nombre = models.CharField(max_length=150)
-    rfc = models.CharField(max_length=13, blank=True)
+    rfc = models.CharField("RFC", max_length=13, default=RFC_GENERICO, validators=[rfc_valido],
+                           help_text=f"Si no da RFC se queda el genérico {RFC_GENERICO}.")
     telefono = models.CharField(max_length=20, blank=True)
+    calle = models.CharField(max_length=120, blank=True)
+    numero_exterior = models.CharField("núm. exterior", max_length=20, blank=True)
+    numero_interior = models.CharField("núm. interior", max_length=20, blank=True)
+    codigo_postal = models.CharField("código postal", max_length=5, blank=True, validators=[cp_valido],
+                                     help_text="Al teclearlo se llenan estado y municipio y se eligen las colonias.")
+    colonia = models.CharField(max_length=120, blank=True)
+    municipio = models.CharField("municipio o alcaldía", max_length=120, blank=True)
+    estado = models.CharField(max_length=60, blank=True)
     lista_precio = models.ForeignKey(ListaPrecio, on_delete=models.PROTECT, help_text="Mostrador, Taller…")
     dias_credito = models.PositiveSmallIntegerField(default=0, help_text="0 = solo contado")
     limite_credito = models.DecimalField(max_digits=12, decimal_places=2, default=0)
@@ -28,6 +44,24 @@ class Cliente(models.Model):
 
     def __str__(self):
         return self.nombre
+
+    def save(self, *args, **kwargs):
+        self.rfc = "".join((self.rfc or "").upper().split()) or RFC_GENERICO
+        super().save(*args, **kwargs)
+
+    @property
+    def rfc_generico(self):
+        return self.rfc == RFC_GENERICO
+
+    @property
+    def domicilio(self):
+        """Calle y número en una línea, y colonia, CP, municipio y estado en otra (las que haya)."""
+        numero = " ".join(x for x in (self.numero_exterior, f"int. {self.numero_interior}" if self.numero_interior else "") if x)
+        calle = " ".join(x for x in (self.calle, numero) if x)
+        resto = ", ".join(x for x in (f"Col. {self.colonia}" if self.colonia else "",
+                                      f"C.P. {self.codigo_postal}" if self.codigo_postal else "",
+                                      self.municipio, self.estado) if x)
+        return [x for x in (calle, resto) if x]
 
     def saldo(self):
         return self.ventas.filter(estado=Venta.Estado.CREDITO).aggregate(s=Sum("saldo"))["s"] or Decimal(0)
@@ -267,3 +301,23 @@ class DevolucionLinea(models.Model):
     venta_linea = models.ForeignKey(VentaLinea, on_delete=models.PROTECT, related_name="devuelto")
     cantidad = models.DecimalField(max_digits=12, decimal_places=3, help_text="En la unidad en que se vendió")
     importe = models.DecimalField(max_digits=12, decimal_places=2)
+
+
+class CodigoPostal(models.Model):
+    """Catálogo Nacional de Códigos Postales de Correos de México (SEPOMEX): una fila por colonia.
+    Se carga con `manage.py cargar_codigos_postales`."""
+
+    cp = models.CharField(max_length=5, db_index=True)
+    colonia = models.CharField(max_length=150)
+    tipo = models.CharField(max_length=40, blank=True, help_text="Colonia, Fraccionamiento, Barrio…")
+    municipio = models.CharField(max_length=120)
+    estado = models.CharField(max_length=60)
+    ciudad = models.CharField(max_length=120, blank=True)
+
+    class Meta:
+        ordering = ["cp", "colonia"]
+        verbose_name = "código postal"
+        verbose_name_plural = "códigos postales"
+
+    def __str__(self):
+        return f"{self.cp} {self.colonia}, {self.municipio}, {self.estado}"

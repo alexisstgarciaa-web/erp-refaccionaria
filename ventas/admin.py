@@ -1,27 +1,63 @@
 from django import forms
 from django.contrib import admin
 from django.core.exceptions import ValidationError
+from django.urls import reverse
 
 from . import nip as nips
-
-from .models import Abono, Cliente, Nip, PedidoCliente, TicketGuardado, Turno, Venta, VentaLinea
+from .cifras import ConComas
+from .models import Abono, Cliente, CodigoPostal, Nip, PedidoCliente, TicketGuardado, Turno, Venta, VentaLinea
 
 
 @admin.register(Cliente)
-class ClienteAdmin(admin.ModelAdmin):
-    list_display = ["nombre", "lista_precio", "dias_credito", "limite_credito", "activo"]
-    search_fields = ["nombre", "rfc", "telefono"]
-    list_filter = ["lista_precio", "activo"]
+class ClienteAdmin(ConComas, admin.ModelAdmin):
+    list_display = ["nombre", "rfc", "telefono", "municipio", "lista_precio", "dias_credito", "limite_credito", "activo"]
+    search_fields = ["nombre", "rfc", "telefono", "colonia", "municipio"]
+    list_filter = ["lista_precio", "activo", "estado"]
+    fieldsets = [
+        (None, {"fields": ["nombre", "rfc", "telefono", "lista_precio", "activo"]}),
+        ("Dirección", {"fields": ["codigo_postal", "colonia", "municipio", "estado", "calle",
+                                  ("numero_exterior", "numero_interior")]}),
+        ("Crédito", {"fields": ["dias_credito", "limite_credito"]}),
+    ]
+
+    class Media:
+        js = ["ventas/cp.js"]
+
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        campo = super().formfield_for_dbfield(db_field, request, **kwargs)
+        if db_field.name == "codigo_postal":
+            campo.widget.attrs.update({"data-cp": reverse("codigo_postal", args=["00000"]), "inputmode": "numeric",
+                                       "autocomplete": "off", "size": 6})
+        return campo
 
 
-class LineaInline(admin.TabularInline):
+@admin.register(CodigoPostal)
+class CodigoPostalAdmin(admin.ModelAdmin):
+    """Solo consulta: el catálogo se carga con manage.py cargar_codigos_postales."""
+
+    list_display = ["cp", "colonia", "tipo", "municipio", "estado"]
+    search_fields = ["=cp", "colonia", "municipio"]
+    list_filter = ["estado"]
+    list_per_page = 50
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+class LineaInline(ConComas, admin.TabularInline):
     model = VentaLinea
     extra = 0
     can_delete = False
     readonly_fields = [f.name for f in VentaLinea._meta.fields]
 
 
-class AbonoInline(admin.TabularInline):
+class AbonoInline(ConComas, admin.TabularInline):
     model = Abono
     extra = 0
     can_delete = False
@@ -29,7 +65,7 @@ class AbonoInline(admin.TabularInline):
 
 
 @admin.register(Venta)
-class VentaAdmin(admin.ModelAdmin):
+class VentaAdmin(ConComas, admin.ModelAdmin):
     """Las ventas se registran desde el mostrador; aquí solo se consultan."""
 
     list_display = ["folio", "fecha", "cliente", "forma_pago", "estado", "total", "saldo"]
@@ -43,13 +79,13 @@ class VentaAdmin(admin.ModelAdmin):
 
 
 @admin.register(Turno)
-class TurnoAdmin(admin.ModelAdmin):
+class TurnoAdmin(ConComas, admin.ModelAdmin):
     list_display = ["id", "usuario", "abierto", "fondo_inicial", "cerrado", "diferencia"]
     readonly_fields = ["abierto", "cerrado", "diferencia"]
 
 
 @admin.register(PedidoCliente)
-class PedidoClienteAdmin(admin.ModelAdmin):
+class PedidoClienteAdmin(ConComas, admin.ModelAdmin):
     """Se crean al cobrar en mostrador; se entregan o cancelan desde Pedidos."""
 
     list_display = ["fecha", "cliente", "contacto", "codigo", "cantidad", "precio", "estado"]
@@ -62,7 +98,7 @@ class PedidoClienteAdmin(admin.ModelAdmin):
 
 
 @admin.register(TicketGuardado)
-class TicketGuardadoAdmin(admin.ModelAdmin):
+class TicketGuardadoAdmin(ConComas, admin.ModelAdmin):
     """Cotizaciones y tickets en espera, para consulta."""
 
     list_display = ["folio", "tipo", "fecha", "cliente", "nombre", "total", "retomado"]
@@ -95,7 +131,7 @@ class NipForm(forms.ModelForm):
 
 
 @admin.register(Nip)
-class NipAdmin(admin.ModelAdmin):
+class NipAdmin(ConComas, admin.ModelAdmin):
     """El administrador asigna o cambia el NIP de cada persona. Nunca se muestra: solo se reemplaza."""
 
     form = NipForm

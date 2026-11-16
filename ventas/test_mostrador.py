@@ -339,7 +339,7 @@ class MostradorTests(TestCase):
         self.assertEqual(Cliente.objects.filter(nombre__iexact="taller ramírez").count(), 1)
         # RFC mal escrito: el formulario se queda abierto con lo tecleado
         r = self.client.post(url, {"nombre": "Juan Pérez", "rfc": "ABC", "next": reverse("mostrador")}, follow=True)
-        self.assertContains(r, "El RFC lleva 12 o 13")
+        self.assertContains(r, "El RFC va como XAXX010101000")
         self.assertContains(r, 'value="Juan Pérez"')
         self.assertContains(r, "data-servidor open")
         self.assertFalse(Cliente.objects.filter(nombre="Juan Pérez").exists())

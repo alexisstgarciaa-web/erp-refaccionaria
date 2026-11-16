@@ -1,3 +1,4 @@
+import unicodedata
 from decimal import Decimal, InvalidOperation
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -18,10 +19,11 @@ from compras.aplicaciones import buscar, clave_modelo, leer_consulta, selector
 
 from . import mostrador as m
 from . import nip as nips
-from .models import Cliente, Devolucion, FormaPago, PedidoCliente, TicketGuardado, Turno, Venta
+from .models import (RFC_GENERICO, Cliente, CodigoPostal, Devolucion, FormaPago, PedidoCliente, TicketGuardado,
+                     Turno, Venta, rfc_valido)
 from .servicios import (abrir_turno, cancelar_venta, cerrar_turno, disponible_para_devolver, esperado_en_caja,
                         por_que_no_cancelar, registrar_abono, registrar_devolucion)
-from .templatetags.erp import cant, pesos
+from .templatetags.erp import cant, miles, pesos
 
 
 def _volver(request, defecto="mostrador"):
@@ -151,6 +153,7 @@ def mostrador(request):
     if g.get("codigo"):
         texto, cuantas = m.leer_captura(g["codigo"], g.get("cantidad"))
         ctx["por_codigo"] = {"texto": texto, "cantidad": cuantas, "precio": g.get("precio", ""),
+                             "precio_txt": pesos(_decimal(g.get("precio", ""))),
                              "resultados": m.buscar_codigo(texto, ticket.cliente.lista_precio)[0]}
     ctx["enfocar_codigo"] = request.session.pop("enfocar_codigo", False) or bool(g.get("codigo"))
     ctx["recien"] = request.session.pop("recien", [])
@@ -164,6 +167,7 @@ def mostrador(request):
     ctx["en_espera"] = TicketGuardado.objects.filter(tipo=TicketGuardado.Tipo.ESPERA, retomado__isnull=True
                                                      ).select_related("cliente")[:8]
     ctx["cliente_nuevo"] = request.session.pop("cliente_nuevo", None)
+    ctx["rfc_generico"] = RFC_GENERICO
     return render(request, "ventas/mostrador.html", ctx)
 
 
@@ -320,7 +324,7 @@ def sugerir(request):
         "clave": e.opcion.clave, "codigo": e.opcion.codigo, "marca": e.opcion.marca,
         "nombre": e.nombre[:70], "equivalente": e.por_equivalencia,
         "hay": not e.opcion.sobre_pedido, "existencia": cant(e.opcion.existencia) if e.opcion.existencia else "",
-        "precio": cant(e.opcion.precio).replace(",", "") if e.opcion.precio is not None else "",
+        "precio": miles(e.opcion.precio) if e.opcion.precio is not None else "",
         "precio_txt": pesos(e.opcion.precio) or "sin precio",
     } for e in res]})
 
@@ -408,14 +412,33 @@ def cliente(request):
     return _volver(request)
 
 
+DIRECCION = ("calle", "numero_exterior", "numero_interior", "codigo_postal", "colonia", "municipio", "estado")
+
+
+def _sin_acentos(texto):
+    return "".join(c for c in unicodedata.normalize("NFKD", texto.casefold()) if not unicodedata.combining(c))
+
+
+@login_required
+def codigo_postal(request, cp):
+    """Estado, municipio y colonias de un código postal, para llenar la dirección al teclearlo."""
+    filas = list(CodigoPostal.objects.filter(cp=cp).values("colonia", "municipio", "estado", "ciudad"))
+    if not filas:
+        return JsonResponse({"cp": cp, "encontrado": False, "colonias": []})
+    colonias = sorted({f["colonia"] for f in filas}, key=_sin_acentos)
+    return JsonResponse({"cp": cp, "encontrado": True, "estado": filas[0]["estado"], "municipio": filas[0]["municipio"],
+                         "ciudad": filas[0]["ciudad"], "colonias": colonias})
+
+
 @login_required
 @require_POST
 def cliente_nuevo(request):
-    """Alta rápida desde el ticket: nombre, teléfono, RFC y lista. El crédito solo lo da el administrador.
-    Si ya existe uno con ese nombre se elige ese en vez de duplicarlo."""
+    """Alta rápida desde el ticket: nombre, teléfono, RFC (el genérico si no da), dirección y lista. El crédito
+    solo lo da el administrador. Si ya existe uno con ese nombre se elige ese en vez de duplicarlo."""
     p = request.POST
-    datos = {k: (p.get(k) or "").strip() for k in ("nombre", "telefono", "rfc", "lista", "dias", "limite")}
-    datos["rfc"] = datos["rfc"].upper().replace(" ", "")
+    datos = {k: " ".join((p.get(k) or "").split()) for k in ("nombre", "telefono", "rfc", "lista", "dias", "limite")
+             + DIRECCION}
+    datos["rfc"] = datos["rfc"].upper().replace(" ", "") or RFC_GENERICO
     ticket = m.Ticket(request.session)
 
     def error(texto):
@@ -425,8 +448,12 @@ def cliente_nuevo(request):
 
     if not datos["nombre"]:
         return error("Escribe el nombre del cliente.")
-    if datos["rfc"] and not (12 <= len(datos["rfc"]) <= 13 and datos["rfc"].isalnum()):
-        return error("El RFC lleva 12 o 13 letras y números, o déjalo vacío.")
+    try:
+        rfc_valido(datos["rfc"])
+    except ValidationError as e:
+        return error(f"{e.messages[0]} Si no lo da, deja el genérico.")
+    if datos["codigo_postal"] and not (len(datos["codigo_postal"]) == 5 and datos["codigo_postal"].isdigit()):
+        return error("El código postal lleva 5 números, o déjalo vacío.")
     existente = Cliente.objects.filter(nombre__iexact=datos["nombre"], activo=True).first()
     if existente:
         ticket.elegir_cliente(existente.pk)
@@ -434,7 +461,8 @@ def cliente_nuevo(request):
         return _volver(request)
     lista = ListaPrecio.objects.filter(pk=datos["lista"]).first() if datos["lista"].isdigit() else None
     nuevo = Cliente(nombre=datos["nombre"][:150], telefono=datos["telefono"][:20], rfc=datos["rfc"],
-                    lista_precio=lista or m.cliente_mostrador().lista_precio)
+                    lista_precio=lista or m.cliente_mostrador().lista_precio,
+                    **{k: datos[k][:Cliente._meta.get_field(k).max_length] for k in DIRECCION})
     dias, limite = _decimal(datos["dias"] or 0), _decimal(datos["limite"] or 0)
     if dias is None or limite is None or dias < 0 or limite < 0 or dias != int(dias) or dias > 365:
         return error("Días de crédito y límite van en números, por ejemplo 15 días y $3,000.")
@@ -482,7 +510,7 @@ def cobrar(request):
         request.session["ultima_venta"] = venta.folio
         if paga_con is not None:
             request.session["ultimo_pago"] = {"recibio": pesos(paga_con), "cambio": pesos(paga_con - venta.total)}
-        partes.append(f"Venta {venta.folio} por ${venta.total:,.2f} con {venta.get_forma_pago_display().lower()}.")
+        partes.append(f"Venta {venta.folio} por {pesos(venta.total)} con {venta.get_forma_pago_display().lower()}.")
     for oc in ordenes:
         partes.append(f"Quedó pedido a {oc.proveedor} en {oc.folio} (borrador, compra de emergencia).")
     if ordenes:

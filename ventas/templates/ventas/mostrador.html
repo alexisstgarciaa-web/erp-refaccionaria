@@ -77,7 +77,7 @@
   </div>
   <div class="captura-precio">
     <label for="captura-precio">Precio c/u con IVA</label>
-    <span class="con-signo"><input name="precio" id="captura-precio" inputmode="decimal" placeholder="De lista" autocomplete="off"></span>
+    <span class="con-signo"><input name="precio" id="captura-precio" inputmode="decimal" data-cifra="pesos" placeholder="De lista" autocomplete="off"></span>
   </div>
   <button class="btn-primario" type="submit">Agregar</button>
   {% if agregado %}
@@ -132,7 +132,7 @@
       <p class="nota" style="margin: 0">Revisa el código, prueba con parte del nombre («anticong», «5w30») o búscalo por vehículo arriba.</p>
       {% endfor %}
     </div>
-    {% if por_codigo.resultados %}<p class="nota">Se agrega{{ por_codigo.cantidad|pluralize:",n" }} {{ por_codigo.cantidad|cant }} al ticket{% if por_codigo.precio %} a ${{ por_codigo.precio }} c/u{% endif %}.</p>{% endif %}
+    {% if por_codigo.resultados %}<p class="nota">Se agrega{{ por_codigo.cantidad|pluralize:",n" }} {{ por_codigo.cantidad|cant }} al ticket{% if por_codigo.precio_txt %} a {{ por_codigo.precio_txt }} c/u{% endif %}.</p>{% endif %}
   </section>
 {% endif %}
 

@@ -21,12 +21,12 @@
     {% if turno and total %}
     <label class="paga-con"{% if cliente.dias_credito %} hidden{% endif %}>
       <span>Paga con</span>
-      <span class="con-signo"><input name="paga_con" id="paga-con" inputmode="decimal" autocomplete="off" placeholder="{{ total|cant|cut:',' }}"></span>
+      <span class="con-signo"><input name="paga_con" id="paga-con" inputmode="decimal" data-cifra="pesos" autocomplete="off" placeholder="{{ total|miles }}"></span>
       <small id="cambio" aria-live="polite"></small>
     </label>
     {% endif %}
     {% if turno %}
-      <button class="cobrar" type="submit" title="F9"{% if not lineas %} disabled{% endif %}>{% if total %}Cobrar {{ total|pesos }}{% elif lineas %}Registrar pedido{% else %}Cobrar{% endif %}</button>
+      <button class="cobrar" type="submit" title="F9"{% if not lineas %} disabled{% endif %}>{% if total %}Cobrar<span class="cobrar-monto"> {{ total|pesos }}</span>{% elif lineas %}Registrar pedido{% else %}Cobrar{% endif %}</button>
     {% else %}
       <a class="cobrar" href="{% url 'caja' %}">Abrir caja para cobrar</a>
     {% endif %}

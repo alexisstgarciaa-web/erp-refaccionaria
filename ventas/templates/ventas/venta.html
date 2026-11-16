@@ -40,7 +40,7 @@
     {% if venta.pedido %}
     <h3 class="venta-sub">Quedó sobre pedido (no se cobró)</h3>
     <ul class="venta-pedido">
-      {% for p in venta.pedido %}<li><span class="mono">{{ p.codigo }}</span> {{ p.descripcion }} · {{ p.cantidad }} pza</li>{% endfor %}
+      {% for p in venta.pedido %}<li><span class="mono">{{ p.codigo }}</span> {{ p.descripcion }} · {{ p.cantidad|cant }} pza</li>{% endfor %}
     </ul>
     {% endif %}
     {% if devoluciones %}
@@ -108,7 +108,7 @@
       {% if venta.estado == 'CREDITO' %}
         {% if turno %}
         <form method="post" action="{% url 'venta_abonar' venta.folio %}" class="abono-form" data-nip="vendedor" data-nip-para="Registrar abono a {{ venta.folio }}">{% csrf_token %}
-          <label class="campo">Abona <span class="con-signo"><input name="monto" inputmode="decimal" value="{{ venta.saldo|stringformat:'.2f' }}" required autocomplete="off"></span></label>
+          <label class="campo">Abona <span class="con-signo"><input name="monto" inputmode="decimal" data-cifra="pesos" value="{{ venta.saldo|miles }}" required autocomplete="off"></span></label>
           <div class="pagos abono-pagos" role="radiogroup" aria-label="Forma de pago del abono">
             {% for valor, nombre in formas_abono %}
             <label><input type="radio" name="forma_pago" value="{{ valor }}"{% if forloop.first %} checked{% endif %}><span>{{ nombre }}</span></label>

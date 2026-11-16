@@ -14,6 +14,7 @@ urlpatterns = [
     path("ticket/<int:i>/precio/", views.precio, name="ticket_precio"),
     path("ticket/cliente/", views.cliente, name="ticket_cliente"),
     path("ticket/cliente/nuevo/", views.cliente_nuevo, name="ticket_cliente_nuevo"),
+    path("cp/<str:cp>/", views.codigo_postal, name="codigo_postal"),
     path("ticket/vaciar/", views.vaciar, name="ticket_vaciar"),
     path("ticket/deshacer/", views.deshacer_vaciar, name="ticket_deshacer"),
     path("ticket/cobrar/", views.cobrar, name="ticket_cobrar"),

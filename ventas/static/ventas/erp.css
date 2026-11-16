@@ -391,6 +391,7 @@ body.doc { background: #D9D9D4; padding-bottom: 40px; }
 .rem-datos div { display: flex; gap: 8px; }
 .rem-datos dt { min-width: 64px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--texto-3); padding-top: 2px; }
 .rem-datos dd { margin: 0; font-weight: 600; }
+.rem-domicilio { display: block; font-weight: 400; color: var(--texto-2); }
 .rem-tabla { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .rem-tabla th { background: #111214; color: #fff; text-align: left; padding: 7px 8px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
 .rem-tabla td { padding: 8px; border-bottom: 1px solid #E3E3DD; vertical-align: top; }
@@ -524,6 +525,7 @@ body.doc { background: #D9D9D4; padding-bottom: 40px; }
   .pagos label { flex: 1; }
   .pagos span { padding: 0 6px; height: 38px; line-height: 38px; text-align: center; font-size: 13px; }
   .cobrar { height: 52px; min-width: 0; font-size: 16px; padding: 0 16px; }
+  .cobrar-monto { display: none; } /* en el teléfono el total ya está junto al botón */
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -679,7 +681,7 @@ a.folio:hover { color: var(--primario); }
 .cliente-nuevo summary:hover, .cliente-nuevo[open] summary { color: var(--primario); }
 .cliente-nuevo-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; padding: 14px; background: var(--superficie-2);
   border-left: 4px solid var(--texto); }
-.cliente-nuevo-form label { display: grid; gap: 5px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--texto-3); }
+.cliente-nuevo-form label { display: grid; align-content: start; gap: 5px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--texto-3); }
 .cliente-nuevo-form label small { text-transform: none; letter-spacing: 0; font-weight: 400; }
 .cliente-nuevo-form input, .cliente-nuevo-form select { height: 42px; font-size: 15px; text-transform: none; letter-spacing: 0; }
 .cliente-nuevo-form .con-signo input { padding-left: 28px; }
@@ -688,6 +690,24 @@ a.folio:hover { color: var(--primario); }
 .cn-nota { margin: 0; font-size: 13px; color: var(--texto-3); }
 .cn-guardar { justify-self: start; }
 .mesa.sin-ficha .cliente-nuevo-form { max-width: 520px; }
+.cliente-nuevo-form [hidden] { display: none; }
+/* Dirección: con el código postal se llenan estado y municipio y la colonia se elige de la lista */
+.cn-direccion { grid-column: 1 / -1; padding-top: 8px; border-top: 1px solid var(--borde); }
+.cliente-nuevo .cn-direccion summary { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--texto-2);
+  text-decoration: none; }
+.cliente-nuevo .cn-direccion summary::before { content: "+ "; }
+.cliente-nuevo .cn-direccion[open] summary::before { content: "− "; }
+.cn-direccion summary small { font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--texto-3); }
+.cn-direccion-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.cn-calle { grid-column: 1 / -1; }
+.cp-aviso { font-size: 12px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--texto-3); }
+.cp-aviso.cp-no { color: var(--rojo); }
+@media (max-width: 480px) {
+  .cn-tel, .cn-rfc { grid-column: 1 / -1; }
+}
+@media (max-width: 360px) {
+  .cobro-total b { font-size: 26px; } /* que $24,691.50 quepa junto a Cobrar */
+}
 
 /* Tickets en espera y cotizar */
 .espera { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; padding: 10px 12px; background: var(--superficie-2); border-left: 4px solid var(--primario); }

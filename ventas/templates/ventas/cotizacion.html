@@ -40,7 +40,7 @@
   </header>
 
   <dl class="rem-datos">
-    <div><dt>Para</dt><dd>{{ g.para }}{% if g.nombre and g.cliente.nombre != "Público en general" %} · {{ g.cliente }}{% endif %}{% if g.cliente.telefono %} · Tel. {{ g.cliente.telefono }}{% endif %}</dd></div>
+    <div><dt>Para</dt><dd>{{ g.para }}{% if g.nombre and g.cliente.nombre != "Público en general" %} · {{ g.cliente }}{% endif %}{% if g.cliente.telefono %} · Tel. {{ g.cliente.telefono }}{% endif %}{% if g.cliente and not g.cliente.rfc_generico %} · RFC {{ g.cliente.rfc }}{% endif %}{% for renglon in g.cliente.domicilio %}<span class="rem-domicilio">{{ renglon }}</span>{% endfor %}</dd></div>
     {% if g.vehiculo %}<div><dt>Vehículo</dt><dd>{{ g.vehiculo }}</dd></div>{% endif %}
     <div><dt>Vigencia</dt><dd>Precios válidos hasta el {{ g.vence|date:"j \d\e F \d\e Y" }}{% if not vigente %} · <b>vencida</b>{% endif %}</dd></div>
     <div><dt>Atendió</dt><dd>{{ g.usuario.get_short_name|default:g.usuario.get_username|default:"—" }}</dd></div>
