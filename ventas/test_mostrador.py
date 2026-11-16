@@ -12,9 +12,11 @@ from compras.models import OrdenCompra, PartidaListaProveedor
 from compras.tests import lista
 from inventario.servicios import registrar_entrada
 from ventas import mostrador as m
+from ventas import nip as nips
 from ventas.models import Cliente, PedidoCliente, TicketGuardado, Turno, Venta
 
 TSURU = "NISSAN. TSURU L4 1.6 (90-04)"
+NIP, NIP_ADMIN = "4821", "7305"
 
 
 class MostradorTests(TestCase):
@@ -35,6 +37,7 @@ class MostradorTests(TestCase):
         Precio.objects.create(lista=self.mostrador, producto=self.fram, unidad=self.fram.unidad_base, precio=98)
         registrar_entrada(self.fram, 10, D("52.43"))
         self.user = get_user_model().objects.create_user("caja1", password="x")
+        nips.asignar(self.user, NIP)
         self.client.force_login(self.user)
         self.veh = m.Vehiculo(2003, "Nissan", "Tsuru", "1.6")
 
@@ -84,7 +87,7 @@ class MostradorTests(TestCase):
         self.assertEqual(r.context["paso"], "marca")
 
     def test_cobrar_vende_lo_que_hay_y_pide_lo_que_no(self):
-        abrir = self.client.post(reverse("caja"), {"accion": "abrir", "fondo": "500"})
+        abrir = self.client.post(reverse("caja"), {"nip": NIP, "accion": "abrir", "fondo": "500"})
         self.assertRedirects(abrir, reverse("mostrador"), fetch_redirect_response=False)
         base = {"anio": 2003, "armadora": "Nissan", "modelo": "Tsuru", "litros": "1.6"}
         fram = f"producto:{self.fram.pk}"
@@ -95,7 +98,7 @@ class MostradorTests(TestCase):
         self.client.post(reverse("ticket_agregar"), {"clave": ca, "pos": "aire", "nivel": "PRE", **base})
         self.client.post(reverse("ticket_cantidad", args=[0]), {"cantidad": "2"})
 
-        r = self.client.post(reverse("ticket_cobrar"), {"forma_pago": "EFECTIVO", **base}, follow=True)
+        r = self.client.post(reverse("ticket_cobrar"), {"nip": NIP, "forma_pago": "EFECTIVO", **base}, follow=True)
         venta = Venta.objects.get()
         self.assertEqual((venta.total, venta.lineas.get().cantidad), (D("196.00"), D("2")))
         self.fram.refresh_from_db()
@@ -114,27 +117,27 @@ class MostradorTests(TestCase):
 
     def test_sin_caja_abierta_no_cobra(self):
         self.client.post(reverse("ticket_agregar"), {"clave": f"producto:{self.fram.pk}", "pos": "aceite"})
-        r = self.client.post(reverse("ticket_cobrar"), {"forma_pago": "EFECTIVO"})
+        r = self.client.post(reverse("ticket_cobrar"), {"nip": NIP, "forma_pago": "EFECTIVO"})
         self.assertRedirects(r, reverse("caja"), fetch_redirect_response=False)
         self.assertFalse(Venta.objects.exists())
 
     def test_credito_solo_a_clientes_con_credito(self):
-        self.client.post(reverse("caja"), {"accion": "abrir", "fondo": "0"})
+        self.client.post(reverse("caja"), {"nip": NIP, "accion": "abrir", "fondo": "0"})
         self.client.post(reverse("ticket_agregar"), {"clave": f"producto:{self.fram.pk}", "pos": "aceite"})
-        self.client.post(reverse("ticket_cobrar"), {"forma_pago": "CREDITO"})
+        self.client.post(reverse("ticket_cobrar"), {"nip": NIP, "forma_pago": "CREDITO"})
         self.assertFalse(Venta.objects.exists())
         taller = Cliente.objects.create(nombre="Taller Ruiz", lista_precio=self.mostrador, dias_credito=15, limite_credito=1000)
         self.client.post(reverse("ticket_cliente"), {"cliente": taller.pk})
-        self.client.post(reverse("ticket_cobrar"), {"forma_pago": "CREDITO"})
+        self.client.post(reverse("ticket_cobrar"), {"nip": NIP, "forma_pago": "CREDITO"})
         self.assertEqual(Venta.objects.get().estado, Venta.Estado.CREDITO)
         # el siguiente cliente ya no hereda al taller ni su crédito
         self.assertEqual(m.Ticket(self.client.session).cliente.nombre, "Público en general")
 
     def test_corte_de_caja(self):
-        self.client.post(reverse("caja"), {"accion": "abrir", "fondo": "500"})
+        self.client.post(reverse("caja"), {"nip": NIP, "accion": "abrir", "fondo": "500"})
         self.client.post(reverse("ticket_agregar"), {"clave": f"producto:{self.fram.pk}", "pos": "aceite"})
-        self.client.post(reverse("ticket_cobrar"), {"forma_pago": "EFECTIVO"})
-        r = self.client.post(reverse("caja"), {"accion": "cerrar", "efectivo": "590", "tarjeta": "0", "transferencia": "0"},
+        self.client.post(reverse("ticket_cobrar"), {"nip": NIP, "forma_pago": "EFECTIVO"})
+        r = self.client.post(reverse("caja"), {"nip": NIP, "accion": "cerrar", "efectivo": "590", "tarjeta": "0", "transferencia": "0"},
                              follow=True)
         turno = Turno.objects.get()
         self.assertIsNotNone(turno.cerrado)
@@ -245,8 +248,8 @@ class MostradorTests(TestCase):
         # al cobrar se respeta el precio tecleado, también en lo que queda sobre pedido
         self.client.post(reverse("ticket_precio", args=[0]), {"precio": "115.50"})
         self.client.post(url, {"codigo": "GP-37", "cantidad": "1", "precio": "130"})
-        self.client.post(reverse("caja"), {"accion": "abrir", "fondo": "500"})
-        self.client.post(reverse("ticket_cobrar"), {"forma_pago": "EFECTIVO"})
+        self.client.post(reverse("caja"), {"nip": NIP, "accion": "abrir", "fondo": "500"})
+        self.client.post(reverse("ticket_cobrar"), {"nip": NIP, "forma_pago": "EFECTIVO"})
         venta = Venta.objects.get()
         self.assertEqual(venta.lineas.get().precio_unitario, D("115.50"))
         self.assertEqual(venta.total, D("231.00"))
@@ -270,14 +273,14 @@ class MostradorTests(TestCase):
         r = self.client.get("/")
         self.assertRegex(r.content.decode(), r'id="codigo"[^>]*autofocus')  # se empieza por el código
         self.assertNotRegex(r.content.decode(), r'id="q"[^>]*autofocus')
-        self.client.post(reverse("caja"), {"accion": "abrir", "fondo": "500"})
+        self.client.post(reverse("caja"), {"nip": NIP, "accion": "abrir", "fondo": "500"})
         self.client.post(reverse("ticket_agregar"), {"clave": f"producto:{self.fram.pk}"})
         self.assertContains(self.client.get("/"), 'id="paga-con"')
         # no alcanza: no cobra
-        r = self.client.post(reverse("ticket_cobrar"), {"forma_pago": "EFECTIVO", "paga_con": "50"}, follow=True)
+        r = self.client.post(reverse("ticket_cobrar"), {"nip": NIP, "forma_pago": "EFECTIVO", "paga_con": "50"}, follow=True)
         self.assertContains(r, "Paga con $50 y son $98: faltan $48.")
         self.assertFalse(Venta.objects.exists())
-        r = self.client.post(reverse("ticket_cobrar"), {"forma_pago": "EFECTIVO", "paga_con": "200"}, follow=True)
+        r = self.client.post(reverse("ticket_cobrar"), {"nip": NIP, "forma_pago": "EFECTIVO", "paga_con": "200"}, follow=True)
         self.assertContains(r, "Cambio $102")
         self.assertEqual(Venta.objects.get().total, D("98"))
 
@@ -297,12 +300,12 @@ class MostradorTests(TestCase):
         self.assertEqual(m.leer_captura("CA6900", ""), ("CA6900", D("1")))
 
     def test_remision_de_la_venta(self):
-        self.client.post(reverse("caja"), {"accion": "abrir", "fondo": "500"})
+        self.client.post(reverse("caja"), {"nip": NIP, "accion": "abrir", "fondo": "500"})
         base = {"anio": 2003, "armadora": "Nissan", "modelo": "Tsuru", "litros": "1.6"}
         ca = f"partida:{PartidaListaProveedor.objects.get(codigo='CA6900').pk}"
         self.client.post(reverse("ticket_agregar"), {"clave": f"producto:{self.fram.pk}", "pos": "aceite"})
         self.client.post(reverse("ticket_agregar"), {"clave": ca, "pos": "aire"})
-        r = self.client.post(reverse("ticket_cobrar"), {"forma_pago": "EFECTIVO", **base}, follow=True)
+        r = self.client.post(reverse("ticket_cobrar"), {"nip": NIP, "forma_pago": "EFECTIVO", **base}, follow=True)
         venta = Venta.objects.get()
         self.assertEqual(venta.vehiculo, "Nissan Tsuru 2003 · 1.6 L")
         self.assertEqual([p["codigo"] for p in venta.pedido], ["CA6900"])
@@ -323,13 +326,14 @@ class MostradorTests(TestCase):
         r = self.client.post(url, {"nombre": " ", "next": reverse("mostrador")}, follow=True)
         self.assertContains(r, "Escribe el nombre del cliente")
         r = self.client.post(url, {"nombre": "Taller Ramírez", "telefono": "4421234567", "rfc": "tara800101ab1",
-                                   "dias": "15", "limite": "3000"}, follow=True)
+                                   "dias": "0", "limite": "0"}, follow=True)
         c = Cliente.objects.get(nombre="Taller Ramírez")
-        # el cajero no da crédito: queda de contado aunque lo mande
         self.assertEqual((c.rfc, c.telefono, c.dias_credito, c.lista_precio), ("TARA800101AB1", "4421234567", 0, self.mostrador))
         self.assertEqual(m.Ticket(self.client.session).cliente, c)
         self.assertContains(r, "dado de alta y elegido en el ticket")
         self.assertContains(r, f'<option value="{c.pk}" selected>Taller Ramírez</option>', html=True)
+        # el formulario pide NIP de administrador solo si le dan crédito
+        self.assertContains(r, 'data-nip="admin" data-nip-cuando="dias"')
         # mismo nombre: no se duplica, se elige el que ya está
         self.client.post(url, {"nombre": "taller ramírez"})
         self.assertEqual(Cliente.objects.filter(nombre__iexact="taller ramírez").count(), 1)
@@ -339,10 +343,16 @@ class MostradorTests(TestCase):
         self.assertContains(r, 'value="Juan Pérez"')
         self.assertContains(r, "data-servidor open")
         self.assertFalse(Cliente.objects.filter(nombre="Juan Pérez").exists())
-        # el administrador sí puede darle crédito al darlo de alta
-        self.user.is_staff = True
-        self.user.save()
-        r = self.client.post(url, {"nombre": "Flotilla Sur", "dias": "30", "limite": "5,000"}, follow=True)
+        # crédito: con el NIP del cajero no; con el de un administrador sí
+        datos = {"nombre": "Flotilla Sur", "dias": "30", "limite": "5,000", "next": reverse("mostrador")}
+        self.assertContains(self.client.post(url, datos, follow=True), "Teclea el NIP de administrador")
+        r = self.client.post(url, {**datos, "nip": NIP}, follow=True)
+        self.assertContains(r, "esto lo autoriza un administrador")
+        self.assertContains(r, 'value="Flotilla Sur"')  # lo tecleado se conserva
+        self.assertFalse(Cliente.objects.filter(nombre="Flotilla Sur").exists())
+        admin = get_user_model().objects.create_user("alexis", is_staff=True)
+        nips.asignar(admin, NIP_ADMIN)
+        r = self.client.post(url, {**datos, "nip": NIP_ADMIN}, follow=True)
         self.assertContains(r, "30 días de crédito hasta $5,000")
         f = Cliente.objects.get(nombre="Flotilla Sur")
         self.assertEqual((f.dias_credito, f.limite_credito), (30, D("5000")))
@@ -418,14 +428,14 @@ class MostradorTests(TestCase):
         self.assertContains(self.client.post(reverse("ticket_cotizar"), {"next": "/"}, follow=True), "El ticket está vacío")
 
     def test_seguimiento_de_pedidos(self):
-        self.client.post(reverse("caja"), {"accion": "abrir", "fondo": "0"})
+        self.client.post(reverse("caja"), {"nip": NIP, "accion": "abrir", "fondo": "0"})
         base = {"anio": 2003, "armadora": "Nissan", "modelo": "Tsuru", "litros": "1.6"}
         ca = f"partida:{PartidaListaProveedor.objects.get(codigo='CA6900').pk}"
         self.client.post(reverse("ticket_agregar"), {"clave": ca, "pos": "aire", "nivel": "PRE", **base})
         self.client.post(reverse("ticket_agregar"), {"clave": f"producto:{self.fram.pk}", "pos": "aceite", **base})
         r = self.client.get(reverse("mostrador"), base)
         self.assertContains(r, 'form="cobro-form"')  # «para avisarle» va con el cobro
-        r = self.client.post(reverse("ticket_cobrar"), {"forma_pago": "EFECTIVO", "contacto": "Sr. Pérez 442 111 2233", **base},
+        r = self.client.post(reverse("ticket_cobrar"), {"nip": NIP, "forma_pago": "EFECTIVO", "contacto": "Sr. Pérez 442 111 2233", **base},
                              follow=True)
         self.assertContains(r, "Lo ves en Pedidos")
         p = PedidoCliente.objects.get()
@@ -454,7 +464,7 @@ class MostradorTests(TestCase):
         t = m.Ticket(self.client.session)
         self.assertEqual((t.cliente.nombre, [(ln.opcion.codigo, ln.precio, ln.pedido) for ln in t.lineas()]),
                          ("Público en general", [("CA6900", D("104"), p.pk)]))
-        self.client.post(reverse("ticket_cobrar"), {"forma_pago": "EFECTIVO"})
+        self.client.post(reverse("ticket_cobrar"), {"nip": NIP, "forma_pago": "EFECTIVO"})
         p.refresh_from_db()
         self.assertEqual(p.estado, PedidoCliente.Estado.ENTREGADO)
         self.assertEqual(p.venta_entrega.total, D("104"))
@@ -462,23 +472,63 @@ class MostradorTests(TestCase):
         self.assertContains(self.client.get(reverse("pedidos"), {"ver": "cerrados"}), p.venta_entrega.folio)
 
     def test_cancelar_pedido_ajusta_la_orden(self):
-        self.client.post(reverse("caja"), {"accion": "abrir", "fondo": "0"})
+        self.client.post(reverse("caja"), {"nip": NIP, "accion": "abrir", "fondo": "0"})
         for _ in range(2):
             self.client.post(reverse("ticket_codigo"), {"codigo": "GP-37"})
-            self.client.post(reverse("ticket_cobrar"), {"forma_pago": "EFECTIVO"})
+            self.client.post(reverse("ticket_cobrar"), {"nip": NIP, "forma_pago": "EFECTIVO"})
         p1, p2 = PedidoCliente.objects.order_by("pk")
         self.assertIsNone(p1.venta)  # todo fue sobre pedido: no hubo venta
         oc = OrdenCompra.objects.get()
         self.assertEqual(oc.lineas.count(), 2)
         r = self.client.post(reverse("pedido_cancelar", args=[p1.pk]), follow=True)
-        self.assertContains(r, "Marca la casilla")
-        r = self.client.post(reverse("pedido_cancelar", args=[p1.pk]), {"confirmo": "1"}, follow=True)
+        self.assertContains(r, "Teclea tu NIP")
+        r = self.client.post(reverse("pedido_cancelar", args=[p1.pk]), {"nip": NIP}, follow=True)
         self.assertContains(r, "se quitó de la orden en borrador")
         p1.refresh_from_db()
         self.assertEqual(p1.estado, PedidoCliente.Estado.CANCELADO)
         self.assertEqual(oc.lineas.count(), 1)
         # si la orden ya se envió, se avisa en vez de tocarla
         OrdenCompra.objects.filter(pk=oc.pk).update(estado=OrdenCompra.Estado.ENVIADA)
-        r = self.client.post(reverse("pedido_cancelar", args=[p2.pk]), {"confirmo": "1"}, follow=True)
+        r = self.client.post(reverse("pedido_cancelar", args=[p2.pk]), {"nip": NIP}, follow=True)
         self.assertContains(r, f"{oc.folio} ya se envió")
         self.assertEqual(oc.lineas.count(), 1)
+
+    def test_cobrar_y_caja_piden_nip_y_firman_quien_lo_hace(self):
+        self.client.post(reverse("caja"), {"accion": "abrir", "fondo": "0"})
+        self.assertFalse(Turno.objects.exists())  # sin NIP no abre
+        self.assertContains(self.client.get(reverse("caja")), 'data-nip="vendedor"')
+        self.client.post(reverse("caja"), {"nip": NIP, "accion": "abrir", "fondo": "0"})
+        t = Turno.objects.get()
+        self.assertEqual((t.usuario, t.abierto_por), (self.user, self.user))
+        self.client.post(reverse("ticket_agregar"), {"clave": f"producto:{self.fram.pk}", "pos": "aceite"})
+        self.assertContains(self.client.get(reverse("mostrador")), 'data-nip="vendedor" data-nip-para="Cobrar $98"')
+        r = self.client.post(reverse("ticket_cobrar"), {"forma_pago": "EFECTIVO"}, follow=True)
+        self.assertContains(r, "Teclea tu NIP")
+        self.assertFalse(Venta.objects.exists())
+        self.assertEqual(len(self.client.session["ticket"]["lineas"]), 1)  # el ticket sigue ahí
+        # otro vendedor en la misma caja firma la venta con su NIP
+        pedro = get_user_model().objects.create_user("pedro", first_name="Pedro")
+        nips.asignar(pedro, "5094")
+        self.client.post(reverse("ticket_cobrar"), {"forma_pago": "EFECTIVO", "nip": "5094"})
+        v = Venta.objects.get()
+        self.assertEqual((v.usuario, v.turno), (pedro, t))
+        self.assertContains(self.client.get(reverse("remision", args=[v.folio])), "Pedro")
+        self.client.post(reverse("caja"), {"nip": "5094", "accion": "cerrar", "efectivo": "98", "tarjeta": "0", "transferencia": "0"})
+        t.refresh_from_db()
+        self.assertEqual(t.cerrado_por, pedro)
+
+    def test_reglas_del_nip(self):
+        from django.core.exceptions import ValidationError
+
+        otro = get_user_model().objects.create_user("pedro")
+        for malo in ("12", "1234567", "12a4", "1111", "1234", "6543"):
+            with self.assertRaises(ValidationError):
+                nips.asignar(otro, malo)
+        with self.assertRaises(ValidationError):  # el NIP dice quién es: no se repite
+            nips.asignar(otro, NIP)
+        nips.asignar(otro, "90817")
+        self.assertEqual(nips.quien(self.client.session, " 90817 "), otro)
+        otro.is_active = False
+        otro.save()
+        with self.assertRaises(ValidationError):
+            nips.quien({}, "90817")

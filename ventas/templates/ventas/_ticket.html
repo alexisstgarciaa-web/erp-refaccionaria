@@ -20,7 +20,8 @@
   </form>
   <details class="cliente-nuevo" data-servidor{% if cliente_nuevo %} open{% endif %}>
     <summary>+ Cliente nuevo</summary>
-    <form method="post" action="{% url 'ticket_cliente_nuevo' %}" class="cliente-nuevo-form">{% csrf_token %}
+    <form method="post" action="{% url 'ticket_cliente_nuevo' %}" class="cliente-nuevo-form" data-recargar
+          data-nip="admin" data-nip-cuando="dias" data-nip-para="Dar crédito al cliente nuevo">{% csrf_token %}
       <input type="hidden" name="next" value="{{ aqui }}">
       <label class="cn-nombre">Nombre o razón social <input name="nombre" value="{{ cliente_nuevo.nombre }}" maxlength="150" required autocomplete="off"></label>
       <label>Teléfono <input name="telefono" value="{{ cliente_nuevo.telefono }}" maxlength="20" inputmode="tel" autocomplete="off"></label>
@@ -28,12 +29,9 @@
       <label class="cn-lista">Lista de precios
         <select name="lista">{% for lp in listas_precio %}<option value="{{ lp.pk }}"{% if cliente_nuevo.lista == lp.pk|stringformat:"d" or not cliente_nuevo and lp.nombre == "Mostrador" %} selected{% endif %}>{{ lp }}</option>{% endfor %}</select>
       </label>
-      {% if user.is_staff %}
       <label>Días de crédito <input name="dias" value="{{ cliente_nuevo.dias|default:'0' }}" inputmode="numeric" autocomplete="off"></label>
       <label>Límite <span class="con-signo"><input name="limite" value="{{ cliente_nuevo.limite|default:'0' }}" inputmode="decimal" autocomplete="off"></span></label>
-      {% else %}
-      <p class="cn-nota">Queda de contado. El crédito lo autoriza el administrador.</p>
-      {% endif %}
+      <p class="cn-nota">Con 0 días queda de contado. Darle crédito pide el NIP de un administrador.</p>
       <button class="btn-sec cn-guardar" type="submit">Dar de alta y elegir</button>
     </form>
   </details>

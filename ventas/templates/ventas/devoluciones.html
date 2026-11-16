@@ -1,0 +1,51 @@
+{% extends "ventas/base.html" %}
+{% load erp %}
+{% block titulo %}Devoluciones{% endblock %}
+{% block contenido %}
+<header class="pagina-titulo">
+  <h1>Devoluciones</h1>
+  <p>Devoluciones y garantías registradas desde cada venta. Las garantías quedan por reclamar al proveedor hasta que las marques.</p>
+</header>
+{% include "ventas/_pestanas.html" with pestana="devoluciones" %}
+<nav class="pestanas sub" aria-label="Qué devoluciones ver">
+  <a href="{% url 'devoluciones' %}"{% if not por_reclamar %} aria-current="page"{% endif %}>Todas</a>
+  <a href="{% url 'devoluciones' %}?ver=por-reclamar"{% if por_reclamar %} aria-current="page"{% endif %}>Garantías por reclamar{% if n_reclamar %} <small>{{ n_reclamar }}</small>{% endif %}</a>
+</nav>
+<form class="panel bloque buscar-remision" method="get" role="search">
+  {% if por_reclamar %}<input type="hidden" name="ver" value="por-reclamar">{% endif %}
+  <label class="campo">Folio, venta, cliente o código <input name="q" value="{{ q }}" placeholder="GAR-000003, VTA-000012, GP-37"></label>
+  <button class="btn" type="submit">Buscar</button>
+</form>
+<section class="panel bloque">
+  <table class="tabla tabla-devoluciones">
+    <thead><tr><th>Folio</th><th>Fecha</th><th>Venta y cliente</th><th>Piezas</th><th class="num">Importe</th><th>Situación</th></tr></thead>
+    <tbody>
+      {% for d in devoluciones %}
+      <tr>
+        <td><b>{{ d.folio }}</b><br><small class="tenue">{{ d.get_tipo_display }}</small></td>
+        <td>{{ d.fecha|date:"j M Y, H:i" }}<br><small class="tenue">autorizó {{ d.autorizo.get_short_name|default:d.autorizo.get_username }}</small></td>
+        <td><a class="folio" href="{% url 'venta' d.venta.folio %}">{{ d.venta.folio }}</a><br><small class="tenue">{{ d.venta.cliente }}</small></td>
+        <td>{% for l in d.lineas.all %}<span class="mono">{{ l.cantidad|cant }} × {{ l.venta_linea.producto.numero_parte|default:l.venta_linea.producto.sku }}</span>{% if not forloop.last %}<br>{% endif %}{% endfor %}<br><small class="tenue">«{{ d.motivo }}»</small></td>
+        <td class="num">{{ d.importe|pesos }}</td>
+        <td>
+          {% if d.tipo == 'GAR' %}
+          <form method="post" action="{% url 'devolucion_reclamo' d.folio %}" class="reclamo-form">{% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <select name="reclamo" aria-label="En qué va el reclamo de {{ d.folio }}" onchange="this.form.submit()">
+              {% for valor, nombre in reclamos %}<option value="{{ valor }}"{% if valor == d.reclamo %} selected{% endif %}>{{ nombre }}</option>{% endfor %}
+            </select>
+            <noscript><button class="btn-sec" type="submit">Guardar</button></noscript>
+          </form>
+          {% else %}
+          {% if d.reembolso %}Regresó {{ d.reembolso|pesos }} en {{ d.get_forma_reembolso_display|lower }}{% endif %}{% if d.a_saldo %}{% if d.reembolso %} · {% endif %}{{ d.a_saldo|pesos }} del saldo{% endif %}
+          <br><small class="tenue">{% if d.regresa_anaquel %}Regresó al anaquel{% else %}No regresó al anaquel{% endif %}</small>
+          {% endif %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="6" style="color: var(--texto-3)">{% if q %}No hay devoluciones con «{{ q }}».{% elif por_reclamar %}No hay garantías pendientes con proveedores.{% else %}Todavía no hay devoluciones ni garantías. Se registran desde cada venta en Remisiones.{% endif %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

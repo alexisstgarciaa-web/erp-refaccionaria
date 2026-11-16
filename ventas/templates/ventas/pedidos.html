@@ -34,8 +34,7 @@
             {% endif %}
             <details class="pedido-cancelar">
               <summary>Ya no lo quiere</summary>
-              <form method="post" action="{% url 'pedido_cancelar' p.pk %}">{% csrf_token %}
-                <label class="confirmo"><input type="checkbox" name="confirmo" value="1" required> Cancelar este pedido</label>
+              <form method="post" action="{% url 'pedido_cancelar' p.pk %}" data-nip="vendedor" data-nip-para="Cancelar el pedido de {{ p.codigo }} para {{ p.cliente }}">{% csrf_token %}
                 <button class="btn-sec" type="submit">Cancelar pedido</button>
               </form>
             </details>

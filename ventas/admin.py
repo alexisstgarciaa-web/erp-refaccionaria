@@ -1,6 +1,10 @@
+from django import forms
 from django.contrib import admin
+from django.core.exceptions import ValidationError
 
-from .models import Abono, Cliente, PedidoCliente, TicketGuardado, Turno, Venta, VentaLinea
+from . import nip as nips
+
+from .models import Abono, Cliente, Nip, PedidoCliente, TicketGuardado, Turno, Venta, VentaLinea
 
 
 @admin.register(Cliente)
@@ -68,3 +72,39 @@ class TicketGuardadoAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return False
+
+
+class NipForm(forms.ModelForm):
+    nip = forms.CharField(label="NIP nuevo", max_length=6, widget=forms.PasswordInput(render_value=False),
+                          help_text="De 4 a 6 números, distinto al de los demás. Con él la persona firma cobros, abonos "
+                                    "y cortes; si es administrador, también autoriza cancelaciones y crédito.")
+    repetir = forms.CharField(label="Repite el NIP", max_length=6, widget=forms.PasswordInput(render_value=False))
+
+    class Meta:
+        model = Nip
+        fields = ["usuario"]
+
+    def clean(self):
+        datos = super().clean()
+        usuario = datos.get("usuario") or getattr(self.instance, "usuario", None)
+        if datos.get("nip") and datos.get("nip") != datos.get("repetir"):
+            raise ValidationError("Los dos NIP no coinciden.")
+        if usuario and datos.get("nip"):
+            self.instance.huella = nips.revisar(usuario, datos["nip"])
+        return datos
+
+
+@admin.register(Nip)
+class NipAdmin(admin.ModelAdmin):
+    """El administrador asigna o cambia el NIP de cada persona. Nunca se muestra: solo se reemplaza."""
+
+    form = NipForm
+    list_display = ["usuario", "es_admin", "cambiado"]
+    search_fields = ["usuario__username", "usuario__first_name", "usuario__last_name"]
+
+    @admin.display(boolean=True, description="Administrador")
+    def es_admin(self, obj):
+        return obj.usuario.is_staff
+
+    def get_readonly_fields(self, request, obj=None):
+        return ["usuario"] if obj else []

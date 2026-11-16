@@ -45,6 +45,10 @@ class Turno(models.Model):
     transferencia_contado = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     diferencia = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True,
                                      help_text="Contado − esperado, todas las formas de pago")
+    abierto_por = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT,
+                                    related_name="+", help_text="Quién tecleó su NIP al abrir")
+    cerrado_por = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT,
+                                    related_name="+", help_text="Quién tecleó su NIP al hacer el corte")
 
     class Meta:
         ordering = ["-abierto"]
@@ -112,6 +116,8 @@ class Abono(models.Model):
     fecha = models.DateTimeField(auto_now_add=True)
     monto = models.DecimalField(max_digits=12, decimal_places=2)
     forma_pago = models.CharField(max_length=10, choices=[c for c in FormaPago.choices if c[0] != FormaPago.CREDITO])
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="+",
+                                help_text="Quién lo recibió (su NIP)")
 
 
 class TicketGuardado(models.Model):
@@ -194,3 +200,70 @@ class PedidoCliente(models.Model):
     @property
     def hay(self):
         return self.producto.existencia >= self.cantidad
+
+
+class Nip(models.Model):
+    """NIP de 4 a 6 dígitos con el que cada persona firma lo que hace en mostrador y caja (cobrar, abonar,
+    abrir y cerrar caja) y con el que un administrador autoriza cancelar, devolver o dar crédito.
+    Se guarda su huella (HMAC con la llave del sistema), no el número; no hay dos iguales porque el NIP
+    solo dice quién es. Los asigna el administrador en Administración."""
+
+    usuario = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="nip")
+    huella = models.CharField(max_length=64, unique=True)
+    cambiado = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "NIP"
+        verbose_name_plural = "NIPs"
+
+    def __str__(self):
+        return f"NIP de {self.usuario}"
+
+
+class Devolucion(models.Model):
+    """Devolución o garantía de piezas de una venta ya cobrada; por ejemplo de un turno cerrado, que ya no se cancela.
+    Devolución: la pieza regresa (al anaquel si está en buen estado) y se descuenta del saldo si la venta es a
+    crédito; lo demás se le regresa en dinero desde la caja abierta y sale en ese corte.
+    Garantía: la pieza salió mala; se le da otra igual sin cobrar y la mala queda para reclamarla al proveedor.
+    Las dos las autoriza un administrador con su NIP."""
+
+    class Tipo(models.TextChoices):
+        DEVOLUCION = "DEV", "Devolución"
+        GARANTIA = "GAR", "Garantía"
+
+    class Reclamo(models.TextChoices):
+        PENDIENTE = "PENDIENTE", "Por reclamar al proveedor"
+        RECLAMADA = "RECLAMADA", "Reclamada al proveedor"
+        REPUESTA = "REPUESTA", "El proveedor la repuso"
+        RECHAZADA = "RECHAZADA", "El proveedor la rechazó"
+
+    folio = models.CharField(max_length=20, unique=True)
+    tipo = models.CharField(max_length=3, choices=Tipo.choices)
+    fecha = models.DateTimeField(auto_now_add=True, db_index=True)
+    venta = models.ForeignKey(Venta, on_delete=models.PROTECT, related_name="devoluciones")
+    turno = models.ForeignKey(Turno, null=True, blank=True, on_delete=models.PROTECT, related_name="devoluciones",
+                              help_text="Caja de la que salió el reembolso")
+    autorizo = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    motivo = models.CharField(max_length=200)
+    importe = models.DecimalField(max_digits=12, decimal_places=2, help_text="Valor de las piezas, con IVA")
+    a_saldo = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text="Lo que se descontó del saldo")
+    reembolso = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text="Lo que salió de la caja")
+    forma_reembolso = models.CharField(max_length=10, blank=True,
+                                       choices=[c for c in FormaPago.choices if c[0] != FormaPago.CREDITO])
+    regresa_anaquel = models.BooleanField(default=True, help_text="Devolución: la pieza estaba bien y se vuelve a vender")
+    reclamo = models.CharField(max_length=10, choices=Reclamo.choices, blank=True, help_text="Garantía: en qué va con el proveedor")
+
+    class Meta:
+        ordering = ["-fecha"]
+        verbose_name = "devolución o garantía"
+        verbose_name_plural = "devoluciones y garantías"
+
+    def __str__(self):
+        return self.folio
+
+
+class DevolucionLinea(models.Model):
+    devolucion = models.ForeignKey(Devolucion, on_delete=models.CASCADE, related_name="lineas")
+    venta_linea = models.ForeignKey(VentaLinea, on_delete=models.PROTECT, related_name="devuelto")
+    cantidad = models.DecimalField(max_digits=12, decimal_places=3, help_text="En la unidad en que se vendió")
+    importe = models.DecimalField(max_digits=12, decimal_places=2)

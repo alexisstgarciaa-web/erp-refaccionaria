@@ -32,4 +32,7 @@ urlpatterns = [
     path("remisiones/<str:folio>/venta/", views.venta, name="venta"),
     path("remisiones/<str:folio>/abonar/", views.venta_abonar, name="venta_abonar"),
     path("remisiones/<str:folio>/cancelar/", views.venta_cancelar, name="venta_cancelar"),
+    path("remisiones/<str:folio>/devolver/", views.venta_devolver, name="venta_devolver"),
+    path("devoluciones/", views.devoluciones, name="devoluciones"),
+    path("devoluciones/<str:folio>/reclamo/", views.devolucion_reclamo, name="devolucion_reclamo"),
 ]

@@ -29,6 +29,7 @@ class Movimiento(models.Model):
         AJUSTE_POSITIVO = "AJ_POS", "Ajuste positivo"
         AJUSTE_NEGATIVO = "AJ_NEG", "Ajuste negativo"
         MERMA = "MERMA", "Merma / caducado"
+        SALIDA_GARANTIA = "SAL_GARANTIA", "Salida por garantía a cliente"
 
     ENTRADAS = {Tipo.ENTRADA_COMPRA, Tipo.DEVOLUCION_CLIENTE, Tipo.AJUSTE_POSITIVO}
 

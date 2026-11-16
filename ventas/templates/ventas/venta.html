@@ -19,6 +19,7 @@
 {% endif %}
 
 <div class="venta-grid">
+  <div class="venta-principal">
   <section class="panel bloque venta-partidas">
     <h2>Partidas</h2>
     <table class="tabla">
@@ -42,7 +43,57 @@
       {% for p in venta.pedido %}<li><span class="mono">{{ p.codigo }}</span> {{ p.descripcion }} · {{ p.cantidad }} pza</li>{% endfor %}
     </ul>
     {% endif %}
+    {% if devoluciones %}
+    <h3 class="venta-sub">Devoluciones y garantías</h3>
+    <ul class="venta-devoluciones">
+      {% for d in devoluciones %}
+      <li>
+        <span><b>{{ d.folio }}</b> · {{ d.get_tipo_display }} · {{ d.fecha|date:"j M Y, H:i" }} · autorizó {{ d.autorizo.get_short_name|default:d.autorizo.get_username }}</span>
+        <span class="tenue">{% for l in d.lineas.all %}{{ l.cantidad|cant }} × {{ l.venta_linea.producto.numero_parte|default:l.venta_linea.producto.sku }}{% if not forloop.last %}, {% endif %}{% endfor %} · «{{ d.motivo }}»</span>
+        <span class="tenue">{% if d.tipo == 'DEV' %}{{ d.importe|pesos }}{% if d.a_saldo %} · {{ d.a_saldo|pesos }} del saldo{% endif %}{% if d.reembolso %} · regresó {{ d.reembolso|pesos }} en {{ d.get_forma_reembolso_display|lower }}{% endif %}{% if not d.regresa_anaquel %} · no regresó al anaquel{% endif %}{% else %}{{ d.get_reclamo_display }}{% endif %}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
   </section>
+
+  {% if venta.estado != 'CANCELADA' %}
+  <section class="panel bloque venta-devolver" id="devolver">
+    <h2>Devolución o garantía</h2>
+    <p>Cuando el cliente regresa piezas. En una devolución se le regresa el dinero, o se baja de su saldo si debe. En una garantía se le da otra pieza igual sin cobrar y la mala queda por reclamar al proveedor. Lo autoriza un administrador con su NIP.</p>
+    <form method="post" action="{% url 'venta_devolver' venta.folio %}" class="devolver-form" data-nip="admin" data-nip-para="Devolución o garantía de {{ venta.folio }}">{% csrf_token %}
+      <div class="pagos devolver-tipo" role="radiogroup" aria-label="Qué se hace">
+        <label><input type="radio" name="tipo" value="DEV" checked><span>Devolución</span></label>
+        <label><input type="radio" name="tipo" value="GAR"><span>Garantía</span></label>
+      </div>
+      <table class="tabla devolver-tabla">
+        <thead><tr><th>Pieza</th><th class="num">Se puede</th><th class="num">Regresa</th></tr></thead>
+        <tbody>
+          {% for ln in lineas %}
+          <tr>
+            <td><span class="mono">{{ ln.producto.numero_parte|default:ln.producto.sku }}</span> <small class="tenue">{{ ln.producto.nombre }} · {{ ln.precio_unitario|pesos }} c/u</small></td>
+            <td class="num">{{ ln.por_devolver|cant }}</td>
+            <td class="num"><input name="cant_{{ ln.pk }}" value="0" inputmode="decimal" autocomplete="off" aria-label="Cuántas regresa de {{ ln.producto.sku }}"{% if not ln.por_devolver %} disabled{% endif %}></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <label class="campo">Motivo <input name="motivo" maxlength="200" required autocomplete="off" placeholder="No era para su motor, salió defectuosa…"></label>
+      <fieldset class="solo-dev">
+        <legend>Si hay que regresar dinero</legend>
+        <div class="pagos abono-pagos" role="radiogroup" aria-label="Cómo se le regresa">
+          {% for valor, nombre in formas_abono %}
+          <label><input type="radio" name="forma_reembolso" value="{{ valor }}"{% if valor == venta.forma_pago or forloop.first and venta.forma_pago == 'CREDITO' %} checked{% endif %}><span>{{ nombre }}</span></label>
+          {% endfor %}
+        </div>
+        <label class="confirmo"><input type="checkbox" name="regresa" value="1" checked> La pieza está en buen estado y regresa al anaquel</label>
+        {% if not turno %}<p class="tenue">Si hay que regresar dinero necesitas <a href="{% url 'caja' %}">la caja abierta</a>.</p>{% endif %}
+      </fieldset>
+      <button class="btn btn-peligro" type="submit">Registrar</button>
+    </form>
+  </section>
+  {% endif %}
+  </div>
 
   <div class="venta-lado">
     {% if venta.forma_pago == 'CREDITO' %}
@@ -56,7 +107,7 @@
       </dl>
       {% if venta.estado == 'CREDITO' %}
         {% if turno %}
-        <form method="post" action="{% url 'venta_abonar' venta.folio %}" class="abono-form">{% csrf_token %}
+        <form method="post" action="{% url 'venta_abonar' venta.folio %}" class="abono-form" data-nip="vendedor" data-nip-para="Registrar abono a {{ venta.folio }}">{% csrf_token %}
           <label class="campo">Abona <span class="con-signo"><input name="monto" inputmode="decimal" value="{{ venta.saldo|stringformat:'.2f' }}" required autocomplete="off"></span></label>
           <div class="pagos abono-pagos" role="radiogroup" aria-label="Forma de pago del abono">
             {% for valor, nombre in formas_abono %}
@@ -90,12 +141,11 @@
     <section class="panel bloque venta-cancelar">
       <h2>Cancelar venta</h2>
       {% if no_cancelar %}
-      <p class="tenue">{{ no_cancelar }}</p>
+      <p class="tenue">{{ no_cancelar }}{% if venta.estado != 'CANCELADA' %} Si regresa piezas, usa <a href="#devolver">devolución o garantía</a>.{% endif %}</p>
       {% else %}
-      <p>Regresa todo al inventario{% if devolver_dinero %} y le devuelves {{ venta.total|pesos }} al cliente; la venta deja de contar en el corte{% else %} y el saldo de {{ venta.cliente }} baja {{ venta.saldo|pesos }}{% endif %}.</p>
-      <form method="post" action="{% url 'venta_cancelar' venta.folio %}" class="cancelar-form">{% csrf_token %}
+      <p>Regresa todo al inventario{% if devolver_dinero %} y le devuelves {{ venta.total|pesos }} al cliente; la venta deja de contar en el corte{% else %} y el saldo de {{ venta.cliente }} baja {{ venta.saldo|pesos }}{% endif %}. Lo autoriza un administrador con su NIP.</p>
+      <form method="post" action="{% url 'venta_cancelar' venta.folio %}" class="cancelar-form" data-nip="admin" data-nip-para="Cancelar {{ venta.folio }} por {{ venta.total|pesos }}">{% csrf_token %}
         <label class="campo">Motivo <input name="motivo" maxlength="200" required placeholder="Se equivocó de pieza, no la quiso…" autocomplete="off"></label>
-        <label class="confirmo"><input type="checkbox" name="confirmo" value="1" required> Confirmo que cancelo {{ venta.folio }}</label>
         <button class="btn btn-peligro" type="submit">Cancelar venta</button>
       </form>
       {% endif %}
