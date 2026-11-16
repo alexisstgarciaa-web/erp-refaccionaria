@@ -1,0 +1,106 @@
+{% extends "ventas/base.html" %}
+{% load erp %}
+{% block titulo %}{{ venta.folio }}{% endblock %}
+{% block contenido %}
+<p class="migas"><a href="{% url 'remisiones' %}">‹ Remisiones</a></p>
+<header class="pagina-titulo venta-titulo">
+  <h1>{{ venta.folio }}
+    {% if venta.estado == 'CANCELADA' %}<span class="estado pedido">Cancelada</span>
+    {% elif venta.estado == 'CREDITO' %}<span class="estado {% if vencida %}pedido{% else %}debe{% endif %}">{% if vencida %}Vencida{% else %}Crédito{% endif %}</span>
+    {% else %}<span class="estado hay">Pagada</span>{% endif %}
+  </h1>
+  <p>{{ venta.fecha|date:"j M Y, H:i" }} · {{ venta.cliente }} · {{ venta.get_forma_pago_display }}{% if venta.usuario %} · atendió {{ venta.usuario.get_short_name|default:venta.usuario.get_username }}{% endif %}{% if venta.vehiculo %} · {{ venta.vehiculo }}{% endif %}</p>
+</header>
+
+{% if venta.estado == 'CANCELADA' %}
+<div class="aviso error venta-cancelada">
+  Cancelada{% if venta.cancelada %} el {{ venta.cancelada|date:"j M Y, H:i" }}{% endif %}{% if venta.cancelada_por %} por {{ venta.cancelada_por.get_short_name|default:venta.cancelada_por.get_username }}{% endif %}{% if venta.motivo_cancelacion %}: «{{ venta.motivo_cancelacion }}»{% endif %}. El inventario ya regresó al anaquel.
+</div>
+{% endif %}
+
+<div class="venta-grid">
+  <section class="panel bloque venta-partidas">
+    <h2>Partidas</h2>
+    <table class="tabla">
+      <thead><tr><th>Código</th><th>Descripción</th><th class="num">Cant.</th><th class="num">Precio</th><th class="num">Importe</th></tr></thead>
+      <tbody>
+        {% for ln in lineas %}
+        <tr>
+          <td class="mono">{{ ln.producto.numero_parte|default:ln.producto.sku }}</td>
+          <td>{{ ln.producto.nombre }} <small class="tenue">{{ ln.producto.marca }}</small></td>
+          <td class="num">{{ ln.cantidad|cant }} {{ ln.unidad }}</td>
+          <td class="num">{{ ln.precio_unitario|pesos }}</td>
+          <td class="num">{{ ln.importe|pesos }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="venta-total">Total con IVA <b>{{ venta.total|pesos }}</b></p>
+    {% if venta.pedido %}
+    <h3 class="venta-sub">Quedó sobre pedido (no se cobró)</h3>
+    <ul class="venta-pedido">
+      {% for p in venta.pedido %}<li><span class="mono">{{ p.codigo }}</span> {{ p.descripcion }} · {{ p.cantidad }} pza</li>{% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+
+  <div class="venta-lado">
+    {% if venta.forma_pago == 'CREDITO' %}
+    <section class="panel bloque venta-cobranza" id="abono">
+      <h2>Cobranza</h2>
+      <dl class="venta-cifras">
+        <div><dt>Total</dt><dd>{{ venta.total|pesos }}</dd></div>
+        <div><dt>Abonado</dt><dd>{{ abonado|pesos }}</dd></div>
+        <div class="saldo"><dt>Saldo</dt><dd class="{% if venta.saldo %}rojo{% else %}verde{% endif %}">{{ venta.saldo|pesos }}</dd></div>
+        {% if venta.vence and venta.estado == 'CREDITO' %}<div><dt>Vence</dt><dd class="{% if vencida %}rojo{% endif %}">{{ venta.vence|date:"j M Y" }}</dd></div>{% endif %}
+      </dl>
+      {% if venta.estado == 'CREDITO' %}
+        {% if turno %}
+        <form method="post" action="{% url 'venta_abonar' venta.folio %}" class="abono-form">{% csrf_token %}
+          <label class="campo">Abona <span class="con-signo"><input name="monto" inputmode="decimal" value="{{ venta.saldo|stringformat:'.2f' }}" required autocomplete="off"></span></label>
+          <div class="pagos abono-pagos" role="radiogroup" aria-label="Forma de pago del abono">
+            {% for valor, nombre in formas_abono %}
+            <label><input type="radio" name="forma_pago" value="{{ valor }}"{% if forloop.first %} checked{% endif %}><span>{{ nombre }}</span></label>
+            {% endfor %}
+          </div>
+          <button class="btn" type="submit">Registrar abono</button>
+        </form>
+        {% else %}
+        <p class="tenue">Para registrar un abono <a href="{% url 'caja' %}">abre la caja</a>: el dinero entra al corte de tu turno.</p>
+        {% endif %}
+      {% endif %}
+      {% if abonos %}
+      <h3 class="venta-sub">Abonos</h3>
+      <ul class="venta-abonos">
+        {% for a in abonos %}<li><span>{{ a.fecha|date:"j M Y, H:i" }} · {{ a.get_forma_pago_display }}</span><b>{{ a.monto|pesos }}</b></li>{% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+    {% endif %}
+
+    <section class="panel bloque venta-imprimir">
+      <h2>Imprimir</h2>
+      <p>
+        <a class="btn-sec" href="{% url 'remision' venta.folio %}?imprimir=1" target="_blank" rel="noopener">Remisión carta</a>
+        <a class="btn-sec" href="{% url 'remision' venta.folio %}?formato=ticket&imprimir=1" target="_blank" rel="noopener">Ticket 80 mm</a>
+      </p>
+    </section>
+
+    {% if venta.estado != 'CANCELADA' %}
+    <section class="panel bloque venta-cancelar">
+      <h2>Cancelar venta</h2>
+      {% if no_cancelar %}
+      <p class="tenue">{{ no_cancelar }}</p>
+      {% else %}
+      <p>Regresa todo al inventario{% if devolver_dinero %} y le devuelves {{ venta.total|pesos }} al cliente; la venta deja de contar en el corte{% else %} y el saldo de {{ venta.cliente }} baja {{ venta.saldo|pesos }}{% endif %}.</p>
+      <form method="post" action="{% url 'venta_cancelar' venta.folio %}" class="cancelar-form">{% csrf_token %}
+        <label class="campo">Motivo <input name="motivo" maxlength="200" required placeholder="Se equivocó de pieza, no la quiso…" autocomplete="off"></label>
+        <label class="confirmo"><input type="checkbox" name="confirmo" value="1" required> Confirmo que cancelo {{ venta.folio }}</label>
+        <button class="btn btn-peligro" type="submit">Cancelar venta</button>
+      </form>
+      {% endif %}
+    </section>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

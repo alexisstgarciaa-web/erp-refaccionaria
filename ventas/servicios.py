@@ -90,8 +90,24 @@ def registrar_venta(turno, cliente, partidas, forma_pago, usuario=None):
     return venta
 
 
+def por_que_no_cancelar(venta, usuario):
+    """None si el usuario puede cancelar la venta; si no, la razón en palabras del mostrador.
+    Una venta de contado de un turno ya cerrado no se cancela aquí: ese dinero ya se contó en su corte
+    y el reembolso descuadraría la caja de hoy."""
+    if venta.estado == Venta.Estado.CANCELADA:
+        return "Ya está cancelada."
+    if venta.abonos.exists():
+        return "Tiene abonos registrados; no se puede cancelar."
+    turno_abierto = venta.turno.cerrado is None
+    if venta.forma_pago != FormaPago.CREDITO and not turno_abierto:
+        return "Es de contado y su turno ya se cerró: ese dinero ya se contó en el corte."
+    if not usuario.is_staff and not (turno_abierto and venta.turno.usuario_id == usuario.pk):
+        return "Solo el administrador cancela ventas de otro turno."
+    return None
+
+
 @transaction.atomic
-def cancelar_venta(venta, usuario=None):
+def cancelar_venta(venta, usuario=None, motivo=""):
     """Regresa el inventario al costo con el que salió. No se cancela una venta con abonos."""
     venta = Venta.objects.select_for_update().get(pk=venta.pk)
     if venta.estado == Venta.Estado.CANCELADA:
@@ -108,7 +124,9 @@ def cancelar_venta(venta, usuario=None):
                           lote_numero=lote.numero if lote else None, caducidad=lote.caducidad if lote else None,
                           referencia=f"CAN-{venta.folio}", usuario=usuario)
     venta.estado, venta.saldo = Venta.Estado.CANCELADA, 0
-    venta.save(update_fields=["estado", "saldo"])
+    venta.cancelada, venta.motivo_cancelacion = timezone.now(), (motivo or "").strip()[:200]
+    venta.cancelada_por = usuario if usuario and usuario.pk else None
+    venta.save(update_fields=["estado", "saldo", "cancelada", "cancelada_por", "motivo_cancelacion"])
     return venta
 
 

@@ -1,4 +1,5 @@
 """Pantalla de mostrador: vehículo → niveles → ticket → cobro (venta + pedido al proveedor)."""
+from datetime import timedelta
 from decimal import Decimal as D
 
 from django.contrib.auth import get_user_model
@@ -11,7 +12,7 @@ from compras.models import OrdenCompra, PartidaListaProveedor
 from compras.tests import lista
 from inventario.servicios import registrar_entrada
 from ventas import mostrador as m
-from ventas.models import Cliente, Turno, Venta
+from ventas.models import Cliente, PedidoCliente, TicketGuardado, Turno, Venta
 
 TSURU = "NISSAN. TSURU L4 1.6 (90-04)"
 
@@ -126,6 +127,8 @@ class MostradorTests(TestCase):
         self.client.post(reverse("ticket_cliente"), {"cliente": taller.pk})
         self.client.post(reverse("ticket_cobrar"), {"forma_pago": "CREDITO"})
         self.assertEqual(Venta.objects.get().estado, Venta.Estado.CREDITO)
+        # el siguiente cliente ya no hereda al taller ni su crédito
+        self.assertEqual(m.Ticket(self.client.session).cliente.nombre, "Público en general")
 
     def test_corte_de_caja(self):
         self.client.post(reverse("caja"), {"accion": "abrir", "fondo": "500"})
@@ -314,3 +317,168 @@ class MostradorTests(TestCase):
         self.assertContains(self.client.get(reverse("remisiones"), {"q": "público"}), venta.folio)
         self.assertNotContains(self.client.get(reverse("remisiones"), {"q": "nadie"}), venta.folio)
         self.assertEqual(self.client.get(reverse("remision", args=["VTA-999999"])).status_code, 404)
+
+    def test_alta_rapida_de_cliente(self):
+        url = reverse("ticket_cliente_nuevo")
+        r = self.client.post(url, {"nombre": " ", "next": reverse("mostrador")}, follow=True)
+        self.assertContains(r, "Escribe el nombre del cliente")
+        r = self.client.post(url, {"nombre": "Taller Ramírez", "telefono": "4421234567", "rfc": "tara800101ab1",
+                                   "dias": "15", "limite": "3000"}, follow=True)
+        c = Cliente.objects.get(nombre="Taller Ramírez")
+        # el cajero no da crédito: queda de contado aunque lo mande
+        self.assertEqual((c.rfc, c.telefono, c.dias_credito, c.lista_precio), ("TARA800101AB1", "4421234567", 0, self.mostrador))
+        self.assertEqual(m.Ticket(self.client.session).cliente, c)
+        self.assertContains(r, "dado de alta y elegido en el ticket")
+        self.assertContains(r, f'<option value="{c.pk}" selected>Taller Ramírez</option>', html=True)
+        # mismo nombre: no se duplica, se elige el que ya está
+        self.client.post(url, {"nombre": "taller ramírez"})
+        self.assertEqual(Cliente.objects.filter(nombre__iexact="taller ramírez").count(), 1)
+        # RFC mal escrito: el formulario se queda abierto con lo tecleado
+        r = self.client.post(url, {"nombre": "Juan Pérez", "rfc": "ABC", "next": reverse("mostrador")}, follow=True)
+        self.assertContains(r, "El RFC lleva 12 o 13")
+        self.assertContains(r, 'value="Juan Pérez"')
+        self.assertContains(r, "data-servidor open")
+        self.assertFalse(Cliente.objects.filter(nombre="Juan Pérez").exists())
+        # el administrador sí puede darle crédito al darlo de alta
+        self.user.is_staff = True
+        self.user.save()
+        r = self.client.post(url, {"nombre": "Flotilla Sur", "dias": "30", "limite": "5,000"}, follow=True)
+        self.assertContains(r, "30 días de crédito hasta $5,000")
+        f = Cliente.objects.get(nombre="Flotilla Sur")
+        self.assertEqual((f.dias_credito, f.limite_credito), (30, D("5000")))
+        self.assertContains(self.client.post(url, {"nombre": "Otro", "dias": "15", "limite": "0"}, follow=True), "ponle también un límite")
+
+    def test_ticket_en_espera_y_retomar(self):
+        base = {"armadora": "Nissan", "anio": "2003", "modelo": "Tsuru", "litros": "1.6"}
+        fram = f"producto:{self.fram.pk}"
+        self.client.post(reverse("ticket_agregar"), {"clave": fram, "pos": "aceite", "nivel": "STD", **base})
+        taller = Cliente.objects.create(nombre="Taller Ruiz", lista_precio=self.mostrador)
+        self.client.post(reverse("ticket_cliente"), {"cliente": taller.pk})
+        r = self.client.post(reverse("ticket_espera"), base, follow=True)
+        self.assertRedirects(r, reverse("mostrador"))
+        self.assertContains(r, "El ticket de Taller Ruiz ($98) quedó en espera")
+        self.assertEqual(self.client.session["ticket"]["lineas"], [])
+        g = TicketGuardado.objects.get(tipo="ESP")
+        self.assertEqual((g.folio, g.cliente, g.vehiculo, g.total), ("ESP-000001", taller, "Nissan Tsuru 2003 · 1.6 L", D("98")))
+        self.assertEqual(m.Ticket(self.client.session).cliente.nombre, "Público en general")
+        self.assertContains(r, "En espera")
+        self.assertContains(r, reverse("ticket_retomar", args=[g.folio]))
+        # mientras, se atiende a otro; al retomar, lo de este otro se va a espera para no perderlo
+        self.client.post(reverse("ticket_cliente"), {"cliente": m.cliente_mostrador().pk})
+        self.client.post(reverse("ticket_codigo"), {"codigo": "PH966B", "cantidad": "2"})
+        r = self.client.post(reverse("ticket_retomar", args=[g.folio]))
+        self.assertRedirects(r, "/?armadora=Nissan&anio=2003&modelo=Tsuru&litros=1.6", fetch_redirect_response=False)
+        t = m.Ticket(self.client.session)
+        self.assertEqual((t.cliente, [ln.cantidad for ln in t.lineas()]), (taller, [1]))
+        otro = TicketGuardado.objects.get(tipo="ESP", retomado__isnull=True)
+        self.assertEqual((otro.cliente.nombre, otro.total), ("Público en general", D("196")))
+        g.refresh_from_db()
+        self.assertIsNotNone(g.retomado)
+        self.assertContains(self.client.post(reverse("ticket_retomar", args=[g.folio]), follow=True), "ya se retomó")
+        # descartar
+        r = self.client.post(reverse("ticket_descartar", args=[otro.folio]), {"next": "/"}, follow=True)
+        self.assertContains(r, "Descartaste el ticket en espera de Público en general")
+        self.assertFalse(TicketGuardado.objects.filter(tipo="ESP", retomado__isnull=True).exists())
+        self.assertNotContains(r, 'class="espera"')
+
+    def test_cotizacion_imprimible_respeta_sus_precios(self):
+        self.client.post(reverse("ticket_codigo"), {"codigo": "PH966B", "cantidad": "2"})
+        self.client.post(reverse("ticket_codigo"), {"codigo": "GP-37"})  # no está en anaquel: sobre pedido
+        TicketGuardado.objects.create(tipo="ESP", folio="ESP-000007", cliente=m.cliente_mostrador())
+        r = self.client.post(reverse("ticket_cotizar"), {"nombre": "Sr. Pérez"})
+        g = TicketGuardado.objects.get(tipo="COT")
+        self.assertEqual(g.folio, "COT-000001")  # cada tipo lleva su consecutivo
+        self.assertRedirects(r, reverse("cotizacion", args=[g.folio]) + "?imprimir=1", fetch_redirect_response=False)
+        self.assertEqual(len(self.client.session["ticket"]["lineas"]), 2)  # el ticket se queda
+        r = self.client.get(reverse("cotizacion", args=[g.folio]))
+        self.assertContains(r, "Cotización")
+        self.assertContains(r, "Sr. Pérez")
+        self.assertContains(r, "sobre pedido")
+        self.assertContains(r, "Precios válidos hasta el")
+        self.assertEqual(g.total, D("196") + D("105"))
+        # sale en la lista de cotizaciones
+        r = self.client.get(reverse("cotizaciones"), {"q": "pérez"})
+        self.assertEqual(list(r.context["cotizaciones"]), [g])
+        # sube el precio; al pasarla al ticket se respeta lo cotizado mientras está vigente
+        Precio.objects.filter(producto=self.fram).update(precio=110)
+        self.client.post(reverse("ticket_vaciar"))
+        r = self.client.post(reverse("ticket_retomar", args=[g.folio]), follow=True)
+        self.assertContains(r, "Van los precios cotizados")
+        fram = next(ln for ln in m.Ticket(self.client.session).lineas() if ln.opcion.codigo == "PH966B")
+        self.assertEqual(fram.precio, D("98"))
+        # vencida: van los precios de hoy
+        TicketGuardado.objects.filter(pk=g.pk).update(fecha=g.fecha - timedelta(days=30))
+        self.client.post(reverse("ticket_vaciar"))
+        r = self.client.post(reverse("ticket_retomar", args=[g.folio]), follow=True)
+        self.assertContains(r, "van los precios de hoy")
+        fram = next(ln for ln in m.Ticket(self.client.session).lineas() if ln.opcion.codigo == "PH966B")
+        self.assertEqual(fram.precio, D("110"))
+        # ticket vacío: no hay nada que cotizar
+        self.client.post(reverse("ticket_vaciar"))
+        self.assertContains(self.client.post(reverse("ticket_cotizar"), {"next": "/"}, follow=True), "El ticket está vacío")
+
+    def test_seguimiento_de_pedidos(self):
+        self.client.post(reverse("caja"), {"accion": "abrir", "fondo": "0"})
+        base = {"anio": 2003, "armadora": "Nissan", "modelo": "Tsuru", "litros": "1.6"}
+        ca = f"partida:{PartidaListaProveedor.objects.get(codigo='CA6900').pk}"
+        self.client.post(reverse("ticket_agregar"), {"clave": ca, "pos": "aire", "nivel": "PRE", **base})
+        self.client.post(reverse("ticket_agregar"), {"clave": f"producto:{self.fram.pk}", "pos": "aceite", **base})
+        r = self.client.get(reverse("mostrador"), base)
+        self.assertContains(r, 'form="cobro-form"')  # «para avisarle» va con el cobro
+        r = self.client.post(reverse("ticket_cobrar"), {"forma_pago": "EFECTIVO", "contacto": "Sr. Pérez 442 111 2233", **base},
+                             follow=True)
+        self.assertContains(r, "Lo ves en Pedidos")
+        p = PedidoCliente.objects.get()
+        venta, oc = Venta.objects.get(), OrdenCompra.objects.get()
+        self.assertEqual((p.codigo, p.cantidad, p.precio, p.contacto, p.venta, p.linea_oc.orden),
+                         ("CA6900", 1, D("104"), "Sr. Pérez 442 111 2233", venta, oc))
+        r = self.client.get(reverse("pedidos"))
+        self.assertContains(r, "Sr. Pérez 442 111 2233")
+        self.assertContains(r, f"{oc.folio} sin enviar")
+        self.assertNotContains(r, 'class="insignia"')
+        # todavía no llega: no se puede entregar
+        r = self.client.post(reverse("pedido_entregar", args=[p.pk]), follow=True)
+        self.assertContains(r, "Todavía no llega")
+        # llega la mercancía
+        registrar_entrada(p.producto, 1, D("65.64"))
+        r = self.client.get(reverse("pedidos"))
+        self.assertContains(r, "Ya está en anaquel")
+        self.assertContains(r, '<span class="insignia" title="Ya llegaron: hay que avisar">1</span>', html=True)
+        # mientras, alguien más está en el ticket: se aparta en espera
+        otro = Cliente.objects.create(nombre="Taller Ruiz", lista_precio=self.mostrador)
+        self.client.post(reverse("ticket_cliente"), {"cliente": otro.pk})
+        self.client.post(reverse("ticket_codigo"), {"codigo": "PH966B"})
+        r = self.client.post(reverse("pedido_entregar", args=[p.pk]), follow=True)
+        self.assertContains(r, "con el precio que se le dijo")
+        self.assertContains(r, "quedó en espera (Taller Ruiz)")
+        t = m.Ticket(self.client.session)
+        self.assertEqual((t.cliente.nombre, [(ln.opcion.codigo, ln.precio, ln.pedido) for ln in t.lineas()]),
+                         ("Público en general", [("CA6900", D("104"), p.pk)]))
+        self.client.post(reverse("ticket_cobrar"), {"forma_pago": "EFECTIVO"})
+        p.refresh_from_db()
+        self.assertEqual(p.estado, PedidoCliente.Estado.ENTREGADO)
+        self.assertEqual(p.venta_entrega.total, D("104"))
+        self.assertEqual(OrdenCompra.objects.count(), 1)  # no se volvió a pedir
+        self.assertContains(self.client.get(reverse("pedidos"), {"ver": "cerrados"}), p.venta_entrega.folio)
+
+    def test_cancelar_pedido_ajusta_la_orden(self):
+        self.client.post(reverse("caja"), {"accion": "abrir", "fondo": "0"})
+        for _ in range(2):
+            self.client.post(reverse("ticket_codigo"), {"codigo": "GP-37"})
+            self.client.post(reverse("ticket_cobrar"), {"forma_pago": "EFECTIVO"})
+        p1, p2 = PedidoCliente.objects.order_by("pk")
+        self.assertIsNone(p1.venta)  # todo fue sobre pedido: no hubo venta
+        oc = OrdenCompra.objects.get()
+        self.assertEqual(oc.lineas.count(), 2)
+        r = self.client.post(reverse("pedido_cancelar", args=[p1.pk]), follow=True)
+        self.assertContains(r, "Marca la casilla")
+        r = self.client.post(reverse("pedido_cancelar", args=[p1.pk]), {"confirmo": "1"}, follow=True)
+        self.assertContains(r, "se quitó de la orden en borrador")
+        p1.refresh_from_db()
+        self.assertEqual(p1.estado, PedidoCliente.Estado.CANCELADO)
+        self.assertEqual(oc.lineas.count(), 1)
+        # si la orden ya se envió, se avisa en vez de tocarla
+        OrdenCompra.objects.filter(pk=oc.pk).update(estado=OrdenCompra.Estado.ENVIADA)
+        r = self.client.post(reverse("pedido_cancelar", args=[p2.pk]), {"confirmo": "1"}, follow=True)
+        self.assertContains(r, f"{oc.folio} ya se envió")
+        self.assertEqual(oc.lineas.count(), 1)

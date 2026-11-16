@@ -1,0 +1,37 @@
+{% extends "ventas/base.html" %}
+{% load erp %}
+{% block titulo %}Cotizaciones{% endblock %}
+{% block contenido %}
+<header class="pagina-titulo">
+  <h1>Cotizaciones</h1>
+  <p>Cotizaciones impresas desde el mostrador. Al pasar una al ticket se respetan sus precios mientras esté vigente.</p>
+</header>
+{% include "ventas/_pestanas.html" with pestana="cotizaciones" %}
+<form class="panel bloque buscar-remision" method="get" role="search">
+  <label class="campo">Folio, cliente o a nombre de <input name="q" value="{{ q }}" placeholder="COT-000012, Taller Ramírez" autofocus></label>
+  <button class="btn" type="submit">Buscar</button>
+</form>
+<section class="panel bloque">
+  <table class="tabla tabla-remisiones tabla-cotizaciones">
+    <thead><tr><th>Folio</th><th>Fecha</th><th>Para</th><th>Vehículo</th><th>Vigencia</th><th class="num">Total</th><th></th></tr></thead>
+    <tbody>
+      {% for g in cotizaciones %}
+      <tr>
+        <td><a class="folio" href="{% url 'cotizacion' g.folio %}" target="_blank" rel="noopener">{{ g.folio }}</a></td>
+        <td>{{ g.fecha|date:"j M Y, H:i" }}</td>
+        <td>{{ g.para }}</td>
+        <td>{{ g.vehiculo|default:"—" }}</td>
+        <td>{% if g.vence >= hoy %}Hasta el {{ g.vence|date:"j M" }}{% else %}<span class="tenue">Venció el {{ g.vence|date:"j M" }}</span>{% endif %}{% if g.retomado %} <small class="tenue">· ya se pasó al ticket</small>{% endif %}</td>
+        <td class="num">{{ g.total|pesos }}</td>
+        <td class="num acciones-remision">
+          <form method="post" action="{% url 'ticket_retomar' g.folio %}" class="en-linea">{% csrf_token %}<button type="submit">Pasar al ticket</button></form>
+          <a href="{% url 'cotizacion' g.folio %}" target="_blank" rel="noopener">Imprimir</a>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="7" style="color: var(--texto-3)">{% if q %}No hay cotizaciones con «{{ q }}».{% else %}Todavía no hay cotizaciones. Se hacen desde el ticket con «Cotizar».{% endif %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

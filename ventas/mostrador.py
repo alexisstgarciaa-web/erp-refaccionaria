@@ -25,7 +25,7 @@ from compras.aplicaciones import ARMADORAS, coincide
 from compras.listas import agregar_a_catalogo
 from compras.models import OrdenCompra, OrdenCompraLinea, PartidaListaProveedor
 
-from .models import Cliente, FormaPago
+from .models import Cliente, FormaPago, PedidoCliente, TicketGuardado
 from .servicios import registrar_venta
 
 NIVELES = [("ECO", "Económico"), ("STD", "Estándar"), ("PRE", "Premium")]
@@ -201,6 +201,7 @@ class Linea:
     cantidad: Decimal
     nivel: str = ""
     precio_especial: Decimal | None = None  # el que se tecleó en mostrador, con IVA; None: el de la lista
+    pedido: int | None = None  # PedidoCliente que se entrega con este renglón
 
     @property
     def sobre_pedido(self):
@@ -259,6 +260,16 @@ class Ticket:
         self.datos["lineas"] = lineas
         self.guardar()
         return lineas.index(suelta) if suelta else len(lineas) - 1
+
+    def agregar_pedido(self, pedido):
+        """Lo que el cliente dejó sobre pedido, ya en anaquel, con el precio que se le dijo."""
+        self.session.pop("ticket_deshacer", None)
+        if any(ln.get("pedido") == pedido.pk for ln in self.datos["lineas"]):
+            return
+        self.datos["cliente"] = pedido.cliente_id
+        self.datos["lineas"].append({"clave": f"producto:{pedido.producto_id}", "pos": "", "cantidad": str(pedido.cantidad),
+                                     "nivel": "", "precio": str(pedido.precio), "pedido": pedido.pk})
+        self.guardar()
 
     def indice(self, clave, pos=""):
         return next((i for i, ln in enumerate(self.datos["lineas"]) if ln["clave"] == clave and ln["pos"] == (pos or "")),
@@ -321,7 +332,7 @@ class Ticket:
             especial = Decimal(ln["precio"]) if ln.get("precio") else None
             if especial is not None and especial == op.precio:
                 especial = None  # igual al de la lista: no es precio especial
-            res.append(Linea(i, pos, obj, op, Decimal(ln["cantidad"]), ln.get("nivel", ""), especial))
+            res.append(Linea(i, pos, obj, op, Decimal(ln["cantidad"]), ln.get("nivel", ""), especial, ln.get("pedido")))
         return res
 
     def por_posicion(self):
@@ -528,13 +539,69 @@ def _producto_para_pedir(linea):
 
 
 @transaction.atomic
-def cobrar(ticket, turno, forma_pago, usuario, veh=None):
-    """Registra la venta de lo que hay en anaquel y una orden de compra de emergencia (borrador)
-    por lo que va sobre pedido. Lo sobre pedido no se cobra hoy: se cobra al entregarse.
-    Devuelve (venta | None, [órdenes])."""
+def descripcion(ln):
+    """Cómo se lee un renglón en papel: la pieza (o el nombre del producto) y la marca."""
+    nombre = ln.pos.nombre if ln.pos else (getattr(ln.objeto, "nombre", "") or getattr(ln.objeto, "descripcion", ""))[:60]
+    return " · ".join(x for x in [nombre, ln.opcion.marca] if x)
+
+
+@transaction.atomic
+def guardar_ticket(ticket, tipo, usuario, veh=None, base=None, nombre=""):
+    """Cotización (el ticket se queda como está) o ticket en espera (el ticket se vacía para atender a otro)."""
     lineas = ticket.lineas(veh)
     if not lineas:
         raise ValidationError("El ticket está vacío.")
+    detalle = [{"i": ln.i, "codigo": ln.opcion.codigo, "descripcion": descripcion(ln), "cantidad": str(ln.cantidad),
+                "precio": str(ln.precio or 0), "importe": str(ln.importe), "pedido": ln.sobre_pedido} for ln in lineas]
+    g = TicketGuardado.objects.create(
+        tipo=tipo, usuario=usuario if usuario and usuario.pk else None, cliente=ticket.cliente, nombre=(nombre or "").strip()[:150],
+        vehiculo=str(veh) if veh else "", vehiculo_params={k: v for k, v in (base or {}).items() if v not in (None, "")},
+        lineas=[dict(ln) for ln in ticket.datos["lineas"]], detalle=detalle,
+        total=sum((ln.importe for ln in lineas), Decimal(0)))
+    ultimo = (TicketGuardado.objects.filter(tipo=tipo, folio__isnull=False).exclude(pk=g.pk).order_by("-pk")
+              .values_list("folio", flat=True).first())
+    g.folio = f"{tipo}-{int(ultimo.split('-')[1]) + 1 if ultimo else 1:06d}"  # cada tipo con su propio consecutivo
+    g.save(update_fields=["folio"])
+    if tipo == TicketGuardado.Tipo.ESPERA:
+        ticket.datos["cliente"] = None  # el que sigue empieza como público en general
+        ticket.vaciar()
+    return g
+
+
+@transaction.atomic
+def retomar(ticket, g, usuario, veh=None, base=None):
+    """Pasa lo guardado al ticket. Si el ticket ya tenía piezas, esas se van a espera para no perderlas.
+    Una cotización vigente respeta los precios cotizados. Devuelve el ticket que quedó en espera, si hubo."""
+    g = TicketGuardado.objects.select_for_update().get(pk=g.pk)
+    if g.tipo == TicketGuardado.Tipo.ESPERA and g.retomado:
+        raise ValidationError(f"{g.folio} ya se retomó.")
+    apartado = guardar_ticket(ticket, TicketGuardado.Tipo.ESPERA, usuario, veh, base) if ticket.datos["lineas"] else None
+    lineas = [dict(ln) for ln in g.lineas]
+    if g.tipo == TicketGuardado.Tipo.COTIZACION and timezone.localdate() <= g.vence:
+        for d in g.detalle:
+            if 0 <= d["i"] < len(lineas) and Decimal(d["precio"]) > 0:
+                lineas[d["i"]]["precio"] = d["precio"]
+    ticket.session.pop("ticket_deshacer", None)
+    ticket.datos["cliente"] = g.cliente_id
+    ticket.datos["lineas"] = lineas
+    ticket.guardar()
+    g.retomado = timezone.now()
+    g.save(update_fields=["retomado"])
+    return apartado
+
+
+@transaction.atomic
+def cobrar(ticket, turno, forma_pago, usuario, veh=None, contacto=""):
+    """Registra la venta de lo que hay en anaquel y una orden de compra de emergencia (borrador)
+    por lo que va sobre pedido. Lo sobre pedido no se cobra hoy: se cobra al entregarse, y queda en
+    Pedidos para avisarle al cliente (contacto: nombre o teléfono). Devuelve (venta | None, [órdenes])."""
+    lineas = ticket.lineas(veh)
+    if not lineas:
+        raise ValidationError("El ticket está vacío.")
+    for ln in lineas:
+        if ln.pedido and ln.sobre_pedido:  # ya se pidió una vez: no se vuelve a pedir
+            raise ValidationError(f"{ln.opcion.codigo} todavía no está completo en anaquel; quítalo del ticket "
+                                  "y entrégalo cuando llegue.")
     cliente = ticket.cliente
     if forma_pago == FormaPago.CREDITO and cliente.dias_credito <= 0:
         raise ValidationError(f"{cliente} no tiene crédito autorizado.")
@@ -548,11 +615,7 @@ def cobrar(ticket, turno, forma_pago, usuario, veh=None):
                                 forma_pago, usuario)
         # para la remisión: qué vehículo se atendió y qué quedó sobre pedido
         venta.vehiculo = str(veh) if veh else ""
-        venta.pedido = [{"codigo": ln.opcion.codigo,
-                         "descripcion": " · ".join(x for x in [
-                             ln.pos.nombre if ln.pos else (getattr(ln.objeto, "nombre", "")
-                                                           or getattr(ln.objeto, "descripcion", ""))[:60],
-                             ln.opcion.marca] if x),
+        venta.pedido = [{"codigo": ln.opcion.codigo, "descripcion": descripcion(ln),
                          "cantidad": str(ln.cantidad), "precio": str(ln.precio or 0), "importe": str(ln.importe)}
                         for ln in lineas if ln.sobre_pedido]
         venta.save(update_fields=["vehiculo", "pedido"])
@@ -560,13 +623,49 @@ def cobrar(ticket, turno, forma_pago, usuario, veh=None):
     for ln in (ln for ln in lineas if ln.sobre_pedido):
         producto, proveedor, costo = _producto_para_pedir(ln)
         oc = _orden_emergencia(proveedor, usuario)
-        OrdenCompraLinea.objects.create(orden=oc, producto=producto, unidad=producto.unidad_base,
-                                        cantidad=ln.cantidad, costo_unitario=costo or 0)
+        linea_oc = OrdenCompraLinea.objects.create(orden=oc, producto=producto, unidad=producto.unidad_base,
+                                                   cantidad=ln.cantidad, costo_unitario=costo or 0)
+        PedidoCliente.objects.create(usuario=usuario if usuario and usuario.pk else None, cliente=cliente,
+                                     contacto=(contacto or "").strip()[:120], venta=venta, vehiculo=str(veh) if veh else "",
+                                     producto=producto, linea_oc=linea_oc, codigo=ln.opcion.codigo,
+                                     descripcion=descripcion(ln)[:200], cantidad=ln.cantidad, precio=ln.precio or 0)
         nota = f"Mostrador: {cliente}" + (f" · {veh}" if veh else "") + (f" · {venta.folio}" if venta else "")
         if nota not in oc.notas:
             oc.notas = (oc.notas + "\n" + nota).strip()
             oc.save(update_fields=["notas"])
         if oc not in ordenes:
             ordenes.append(oc)
+    entregados = [ln.pedido for ln in vender if ln.pedido]
+    if venta and entregados:
+        PedidoCliente.objects.filter(pk__in=entregados, estado=PedidoCliente.Estado.PEDIDO).update(
+            estado=PedidoCliente.Estado.ENTREGADO, cerrado=timezone.now(), venta_entrega=venta)
+    ticket.datos["cliente"] = None  # el siguiente cliente empieza como público en general, sin crédito
     ticket.vaciar()
     return venta, ordenes
+
+
+@transaction.atomic
+def cancelar_pedido(pedido):
+    """Si su orden de compra sigue en borrador, se le quita esa cantidad (o el renglón completo).
+    Devuelve la orden que ya se había enviado, para avisarle al proveedor, o None."""
+    pedido = PedidoCliente.objects.select_for_update().get(pk=pedido.pk)
+    if pedido.estado != PedidoCliente.Estado.PEDIDO:
+        raise ValidationError("Ese pedido ya no está pendiente.")
+    enviada = None
+    lin = pedido.linea_oc
+    if lin:
+        orden = lin.orden
+        if orden.estado == OrdenCompra.Estado.BORRADOR:
+            if lin.cantidad <= pedido.cantidad:
+                pedido.linea_oc = None
+                lin.delete()
+                if not orden.lineas.exists():  # borrador que solo era para esto
+                    orden.delete()
+            else:
+                lin.cantidad -= pedido.cantidad
+                lin.save(update_fields=["cantidad"])
+        elif orden.estado != OrdenCompra.Estado.CANCELADA:
+            enviada = orden
+    pedido.estado, pedido.cerrado = PedidoCliente.Estado.CANCELADO, timezone.now()
+    pedido.save(update_fields=["estado", "cerrado", "linea_oc"])
+    return enviada

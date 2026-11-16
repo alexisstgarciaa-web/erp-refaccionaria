@@ -1,0 +1,6 @@
+{% load erp %}<nav class="pestanas" aria-label="Qué ver">
+  {% url 'remisiones' as u_rem %}{% url 'cotizaciones' as u_cot %}
+  <a href="{{ u_rem }}{% if q %}?q={{ q|urlencode }}{% endif %}"{% if pestana == 'todas' %} aria-current="page"{% endif %}>Ventas</a>
+  <a href="{{ u_rem }}?ver=por-cobrar{% if q %}&amp;q={{ q|urlencode }}{% endif %}"{% if pestana == 'por-cobrar' %} aria-current="page"{% endif %}>Por cobrar{% if n_por_cobrar %} <small>{{ n_por_cobrar }} · {{ saldo_total|pesos }}</small>{% endif %}</a>
+  <a href="{{ u_cot }}{% if q %}?q={{ q|urlencode }}{% endif %}"{% if pestana == 'cotizaciones' %} aria-current="page"{% endif %}>Cotizaciones</a>
+</nav>

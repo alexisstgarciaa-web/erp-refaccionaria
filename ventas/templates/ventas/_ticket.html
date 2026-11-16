@@ -18,6 +18,47 @@
     </select>
     <noscript><button class="btn-sec" type="submit">Cambiar</button></noscript>
   </form>
+  <details class="cliente-nuevo" data-servidor{% if cliente_nuevo %} open{% endif %}>
+    <summary>+ Cliente nuevo</summary>
+    <form method="post" action="{% url 'ticket_cliente_nuevo' %}" class="cliente-nuevo-form">{% csrf_token %}
+      <input type="hidden" name="next" value="{{ aqui }}">
+      <label class="cn-nombre">Nombre o razón social <input name="nombre" value="{{ cliente_nuevo.nombre }}" maxlength="150" required autocomplete="off"></label>
+      <label>Teléfono <input name="telefono" value="{{ cliente_nuevo.telefono }}" maxlength="20" inputmode="tel" autocomplete="off"></label>
+      <label>RFC <small>opcional</small> <input name="rfc" value="{{ cliente_nuevo.rfc }}" maxlength="13" autocomplete="off" class="mayusculas"></label>
+      <label class="cn-lista">Lista de precios
+        <select name="lista">{% for lp in listas_precio %}<option value="{{ lp.pk }}"{% if cliente_nuevo.lista == lp.pk|stringformat:"d" or not cliente_nuevo and lp.nombre == "Mostrador" %} selected{% endif %}>{{ lp }}</option>{% endfor %}</select>
+      </label>
+      {% if user.is_staff %}
+      <label>Días de crédito <input name="dias" value="{{ cliente_nuevo.dias|default:'0' }}" inputmode="numeric" autocomplete="off"></label>
+      <label>Límite <span class="con-signo"><input name="limite" value="{{ cliente_nuevo.limite|default:'0' }}" inputmode="decimal" autocomplete="off"></span></label>
+      {% else %}
+      <p class="cn-nota">Queda de contado. El crédito lo autoriza el administrador.</p>
+      {% endif %}
+      <button class="btn-sec cn-guardar" type="submit">Dar de alta y elegir</button>
+    </form>
+  </details>
+
+  {% if en_espera %}
+  <div class="espera" aria-label="Tickets en espera">
+    <span class="espera-titulo">En espera · toca uno para retomarlo</span>
+    {% for g in en_espera %}
+    <div class="espera-item">
+      <form method="post" action="{% url 'ticket_retomar' g.folio %}" data-recargar>{% csrf_token %}
+        <input type="hidden" name="next" value="{{ aqui }}">
+        {% for k, v in base.items %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+        <button type="submit" class="espera-retomar"><b>{{ g.para }}</b><span>{% if g.vehiculo %}{{ g.vehiculo }} · {% endif %}{{ g.total|pesos }} · {{ g.fecha|date:"H:i" }}</span></button>
+      </form>
+      <details class="espera-quitar">
+        <summary aria-label="Descartar el ticket de {{ g.para }}" title="Descartar">✕</summary>
+        <form method="post" action="{% url 'ticket_descartar' g.folio %}">{% csrf_token %}
+          <input type="hidden" name="next" value="{{ aqui }}">
+          <button type="submit">Descartar</button>
+        </form>
+      </details>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
 
   {% if puede_deshacer %}
   <form method="post" action="{% url 'ticket_deshacer' %}" class="ticket-deshacer">{% csrf_token %}
@@ -34,7 +75,28 @@
   {% if pedido_total %}
     <h3 class="ticket-pedido">Sobre pedido · se cobra al entregar</h3>
     {% for ln in lineas reversed %}{% if ln.sobre_pedido %}{% include "ventas/_renglon.html" %}{% endif %}{% endfor %}
-    <p class="ticket-nota">Al cobrar queda la orden al proveedor en borrador.</p>
+    <label class="ticket-contacto">Para avisarle cuando llegue
+      <input name="contacto" form="cobro-form" maxlength="120" autocomplete="off" value="{{ cliente.telefono }}" placeholder="Nombre y teléfono">
+    </label>
+    <p class="ticket-nota">Al cobrar se pide al proveedor y queda en Pedidos para avisarle.</p>
   {% endif %}
   </div>
+  {% if lineas %}
+  <div class="ticket-acciones">
+    <form method="post" action="{% url 'ticket_espera' %}" data-recargar>{% csrf_token %}
+      <input type="hidden" name="next" value="{{ aqui }}">
+      {% for k, v in base.items %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+      <button class="btn-sec" type="submit">Poner en espera</button>
+    </form>
+    <details class="cotizar">
+      <summary class="btn-sec">Cotizar</summary>
+      <form method="post" action="{% url 'ticket_cotizar' %}" target="_blank" data-recargar>{% csrf_token %}
+        <input type="hidden" name="next" value="{{ aqui }}">
+        {% for k, v in base.items %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+        <label>A nombre de <small>opcional</small> <input name="nombre" maxlength="150" autocomplete="off" placeholder="{{ cliente }}"></label>
+        <button class="btn-sec" type="submit">Imprimir cotización</button>
+      </form>
+    </details>
+  </div>
+  {% endif %}
 </aside>

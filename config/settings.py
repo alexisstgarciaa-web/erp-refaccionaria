@@ -159,6 +159,8 @@ NEGOCIO_DIRECCION = os.environ.get("NEGOCIO_DIRECCION", "")
 NEGOCIO_TELEFONO = os.environ.get("NEGOCIO_TELEFONO", "")
 # Lo que no hay en anaquel y se ofrece de la lista del proveedor: costo × (1 + esto) + IVA.
 SOBREPRECIO_PEDIDO = os.environ.get("SOBREPRECIO_PEDIDO", "0.37")
+# Días que se respetan los precios de una cotización
+COTIZACION_VIGENCIA_DIAS = int(os.environ.get("COTIZACION_VIGENCIA_DIAS", "7"))
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field

@@ -4,7 +4,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
-from django.db.models import Count
+from django.db.models import Count, Sum
 from django.http import JsonResponse
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
@@ -13,11 +13,13 @@ from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
+from catalogo.models import ListaPrecio
 from compras.aplicaciones import buscar, clave_modelo, leer_consulta, selector
 
 from . import mostrador as m
-from .models import Cliente, FormaPago, Turno, Venta
-from .servicios import abrir_turno, cerrar_turno, esperado_en_caja
+from .models import Cliente, FormaPago, PedidoCliente, TicketGuardado, Turno, Venta
+from .servicios import (abrir_turno, cancelar_venta, cerrar_turno, esperado_en_caja, por_que_no_cancelar,
+                        registrar_abono)
 from .templatetags.erp import cant, pesos
 
 
@@ -47,6 +49,15 @@ def _decimal(txt, defecto=None):
         return Decimal(str(txt).replace(",", "").replace("$", "").strip())
     except (InvalidOperation, ValueError):
         return defecto
+
+
+def _vehiculo_post(p):
+    """El vehículo que se estaba atendiendo, de los campos ocultos del formulario: (Vehiculo, parámetros)."""
+    if not (p.get("anio") or "").isdigit():
+        return None, None
+    litros = p.get("litros", "")
+    veh = m.Vehiculo(int(p["anio"]), p.get("armadora", ""), p.get("modelo", ""), "" if litros == "todos" else litros)
+    return veh, {"armadora": veh.armadora, "anio": veh.anio, "modelo": veh.modelo, "litros": litros}
 
 
 def _vehiculo_de_busqueda(texto):
@@ -139,6 +150,10 @@ def mostrador(request):
     ctx["ultima_venta"] = Venta.objects.filter(folio=folio).first() if folio else None
     ctx["ultimo_pago"] = request.session.pop("ultimo_pago", None)
     ctx["puede_deshacer"] = bool(request.session.get("ticket_deshacer")) and not lineas
+    ctx["listas_precio"] = ListaPrecio.objects.order_by("nombre")
+    ctx["en_espera"] = TicketGuardado.objects.filter(tipo=TicketGuardado.Tipo.ESPERA, retomado__isnull=True
+                                                     ).select_related("cliente")[:8]
+    ctx["cliente_nuevo"] = request.session.pop("cliente_nuevo", None)
     return render(request, "ventas/mostrador.html", ctx)
 
 
@@ -385,17 +400,54 @@ def cliente(request):
 
 @login_required
 @require_POST
+def cliente_nuevo(request):
+    """Alta rápida desde el ticket: nombre, teléfono, RFC y lista. El crédito solo lo da el administrador.
+    Si ya existe uno con ese nombre se elige ese en vez de duplicarlo."""
+    p = request.POST
+    datos = {k: (p.get(k) or "").strip() for k in ("nombre", "telefono", "rfc", "lista", "dias", "limite")}
+    datos["rfc"] = datos["rfc"].upper().replace(" ", "")
+    ticket = m.Ticket(request.session)
+
+    def error(texto):
+        messages.error(request, texto)
+        request.session["cliente_nuevo"] = datos
+        return _volver(request)
+
+    if not datos["nombre"]:
+        return error("Escribe el nombre del cliente.")
+    if datos["rfc"] and not (12 <= len(datos["rfc"]) <= 13 and datos["rfc"].isalnum()):
+        return error("El RFC lleva 12 o 13 letras y números, o déjalo vacío.")
+    existente = Cliente.objects.filter(nombre__iexact=datos["nombre"], activo=True).first()
+    if existente:
+        ticket.elegir_cliente(existente.pk)
+        messages.info(request, f"{existente} ya estaba dado de alta; lo dejé elegido.")
+        return _volver(request)
+    lista = ListaPrecio.objects.filter(pk=datos["lista"]).first() if datos["lista"].isdigit() else None
+    nuevo = Cliente(nombre=datos["nombre"][:150], telefono=datos["telefono"][:20], rfc=datos["rfc"],
+                    lista_precio=lista or m.cliente_mostrador().lista_precio)
+    if request.user.is_staff:
+        dias, limite = _decimal(datos["dias"] or 0), _decimal(datos["limite"] or 0)
+        if dias is None or limite is None or dias < 0 or limite < 0 or dias != int(dias) or dias > 365:
+            return error("Días de crédito y límite van en números, por ejemplo 15 días y $3,000.")
+        if dias and not limite:
+            return error("Si le das días de crédito, ponle también un límite.")
+        nuevo.dias_credito, nuevo.limite_credito = int(dias), limite
+    nuevo.save()
+    ticket.elegir_cliente(nuevo.pk)
+    extra = f" con {nuevo.dias_credito} días de crédito hasta {pesos(nuevo.limite_credito)}" if nuevo.dias_credito else ""
+    messages.success(request, f"Cliente {nuevo} dado de alta{extra} y elegido en el ticket.")
+    return _volver(request)
+
+
+@login_required
+@require_POST
 def cobrar(request):
     turno = _turno(request.user)
     if not turno:
         messages.error(request, "Abre la caja antes de cobrar.")
         return redirect("caja")
     ticket = m.Ticket(request.session)
-    veh = None
-    if request.POST.get("anio", "").isdigit():
-        litros = request.POST.get("litros", "")
-        veh = m.Vehiculo(int(request.POST["anio"]), request.POST.get("armadora", ""), request.POST.get("modelo", ""),
-                         "" if litros == "todos" else litros)
+    veh, _ = _vehiculo_post(request.POST)
     forma = request.POST.get("forma_pago", FormaPago.EFECTIVO)
     # efectivo: con cuánto paga, para dar el cambio (opcional)
     paga_con = _decimal(request.POST.get("paga_con")) if forma == FormaPago.EFECTIVO else None
@@ -405,7 +457,7 @@ def cobrar(request):
             messages.error(request, f"Paga con {pesos(paga_con)} y son {pesos(por_cobrar)}: faltan {pesos(por_cobrar - paga_con)}.")
             return _volver(request)
     try:
-        venta, ordenes = m.cobrar(ticket, turno, forma, request.user, veh)
+        venta, ordenes = m.cobrar(ticket, turno, forma, request.user, veh, contacto=request.POST.get("contacto", ""))
     except ValidationError as e:
         messages.error(request, " ".join(e.messages))
         return _volver(request)
@@ -417,8 +469,181 @@ def cobrar(request):
         partes.append(f"Venta {venta.folio} por ${venta.total:,.2f} con {venta.get_forma_pago_display().lower()}.")
     for oc in ordenes:
         partes.append(f"Quedó pedido a {oc.proveedor} en {oc.folio} (borrador, compra de emergencia).")
+    if ordenes:
+        partes.append("Lo ves en Pedidos para avisarle al cliente cuando llegue.")
     messages.success(request, " ".join(partes))
     return redirect("mostrador")  # siguiente cliente
+
+
+@login_required
+@require_POST
+def poner_en_espera(request):
+    """Aparta el ticket para atender a otro cliente; se retoma desde el ticket."""
+    veh, base = _vehiculo_post(request.POST)
+    try:
+        g = m.guardar_ticket(m.Ticket(request.session), TicketGuardado.Tipo.ESPERA, request.user, veh, base)
+    except ValidationError as e:
+        messages.error(request, " ".join(e.messages))
+        return _volver(request)
+    messages.success(request, f"El ticket de {g.para} ({pesos(g.total)}) quedó en espera. Lo retomas desde el ticket.")
+    return redirect("mostrador")
+
+
+@login_required
+@require_POST
+def cotizar(request):
+    """Guarda la cotización con folio y abre la hoja para imprimirla. El ticket se queda como está."""
+    veh, base = _vehiculo_post(request.POST)
+    try:
+        g = m.guardar_ticket(m.Ticket(request.session), TicketGuardado.Tipo.COTIZACION, request.user, veh, base,
+                             nombre=request.POST.get("nombre", ""))
+    except ValidationError as e:
+        messages.error(request, " ".join(e.messages))
+        return _volver(request)
+    return redirect(reverse("cotizacion", args=[g.folio]) + "?imprimir=1")
+
+
+@login_required
+@require_POST
+def retomar(request, folio):
+    g = get_object_or_404(TicketGuardado, folio=folio)
+    veh, base = _vehiculo_post(request.POST)
+    try:
+        apartado = m.retomar(m.Ticket(request.session), g, request.user, veh, base)
+    except ValidationError as e:
+        messages.error(request, " ".join(e.messages))
+        return _volver(request)
+    partes = [f"Retomaste {g.folio} de {g.para}."]
+    if g.tipo == TicketGuardado.Tipo.COTIZACION:
+        partes.append("Van los precios cotizados." if timezone.localdate() <= g.vence
+                      else f"La cotización venció el {g.vence:%d/%m}; van los precios de hoy.")
+    if apartado:
+        partes.append(f"Lo que tenías en el ticket quedó en espera ({apartado.para}).")
+    messages.success(request, " ".join(partes))
+    return redirect(_url(**g.vehiculo_params))
+
+
+@login_required
+@require_POST
+def descartar_espera(request, folio):
+    g = get_object_or_404(TicketGuardado, folio=folio, tipo=TicketGuardado.Tipo.ESPERA)
+    if not g.retomado:
+        g.retomado = timezone.now()
+        g.save(update_fields=["retomado"])
+        messages.info(request, f"Descartaste el ticket en espera de {g.para}.")
+    return _volver(request)
+
+
+def _detalle(g):
+    return [dict(d, cantidad=Decimal(d["cantidad"]), precio=Decimal(d["precio"]), importe=Decimal(d["importe"]))
+            for d in g.detalle]
+
+
+@login_required
+def cotizacion(request, folio):
+    """Cotización para imprimir, en hoja carta o ticket de 80 mm, con su vigencia."""
+    from django.conf import settings
+
+    g = get_object_or_404(TicketGuardado.objects.select_related("cliente", "usuario"), folio=folio,
+                          tipo=TicketGuardado.Tipo.COTIZACION)
+    lineas = _detalle(g)
+    ctx = {"g": g, "formato": "ticket" if request.GET.get("formato") == "ticket" else "carta",
+           "imprimir": request.GET.get("imprimir") == "1", "lineas": lineas,
+           "hay_pedido": any(d["pedido"] for d in lineas), "subtotal": g.total / m.IVA, "iva": g.total - g.total / m.IVA,
+           "vigente": timezone.localdate() <= g.vence, "dias": settings.COTIZACION_VIGENCIA_DIAS,
+           "rfc": settings.NEGOCIO_RFC, "direccion": settings.NEGOCIO_DIRECCION, "telefono": settings.NEGOCIO_TELEFONO}
+    return render(request, "ventas/cotizacion.html", ctx)
+
+
+@login_required
+def cotizaciones(request):
+    q = (request.GET.get("q") or "").strip()
+    cots = TicketGuardado.objects.filter(tipo=TicketGuardado.Tipo.COTIZACION).select_related("cliente")
+    if q:
+        cots = cots.filter(Q(folio__icontains=q) | Q(cliente__nombre__icontains=q) | Q(nombre__icontains=q))
+    pendiente = Venta.objects.filter(estado=Venta.Estado.CREDITO)
+    return render(request, "ventas/cotizaciones.html", {
+        "cotizaciones": cots[:60], "q": q, "turno": _turno(request.user), "hoy": timezone.localdate(),
+        "saldo_total": pendiente.aggregate(s=Sum("saldo"))["s"] or 0, "n_por_cobrar": pendiente.count()})
+
+
+def _situacion(p):
+    """En qué va un pedido de cliente, en palabras del mostrador: (clase, texto)."""
+    if p.estado != PedidoCliente.Estado.PEDIDO:
+        return "cerrado", p.get_estado_display()
+    if p.hay:
+        return "listo", "Ya está en anaquel: avísale"
+    orden = p.linea_oc.orden if p.linea_oc_id else None
+    if orden is None:
+        return "alerta", "Sin orden de compra: hay que pedirlo"
+    if orden.estado == orden.Estado.BORRADOR:
+        return "alerta", f"{orden.folio} sin enviar a {orden.proveedor}"
+    if orden.estado == orden.Estado.CANCELADA:
+        return "alerta", f"{orden.folio} se canceló: hay que volver a pedirlo"
+    if orden.estado == orden.Estado.ENVIADA:
+        llega = f", llega el {orden.fecha_esperada:%d/%m}" if orden.fecha_esperada else ""
+        return "camino", f"Pedido a {orden.proveedor} en {orden.folio}{llega}"
+    return "alerta", f"{orden.folio} ya se recibió pero no alcanza en anaquel"
+
+
+@login_required
+def pedidos(request):
+    """Lo que los clientes dejaron sobre pedido: primero lo que ya llegó, para avisarles."""
+    q = (request.GET.get("q") or "").strip()
+    cerrados = request.GET.get("ver") == "cerrados"
+    qs = PedidoCliente.objects.select_related("cliente", "producto", "linea_oc__orden__proveedor", "venta", "venta_entrega")
+    qs = qs.exclude(estado=PedidoCliente.Estado.PEDIDO).order_by("-cerrado") if cerrados else qs.filter(estado=PedidoCliente.Estado.PEDIDO)
+    if q:
+        qs = qs.filter(Q(cliente__nombre__icontains=q) | Q(codigo__icontains=q) | Q(contacto__icontains=q)
+                       | Q(descripcion__icontains=q))
+    hoy = timezone.localdate()
+    filas = [{"p": p, "situacion": _situacion(p), "dias": (hoy - timezone.localtime(p.fecha).date()).days} for p in qs[:100]]
+    if not cerrados:
+        filas.sort(key=lambda f: (f["situacion"][0] != "listo", f["p"].fecha))
+    pendientes = PedidoCliente.objects.filter(estado=PedidoCliente.Estado.PEDIDO)
+    return render(request, "ventas/pedidos.html", {
+        "filas": filas, "q": q, "cerrados": cerrados, "turno": _turno(request.user), "n_pendientes": pendientes.count()})
+
+
+@login_required
+@require_POST
+def pedido_entregar(request, pk):
+    p = get_object_or_404(PedidoCliente.objects.select_related("producto", "cliente"), pk=pk)
+    if p.estado != PedidoCliente.Estado.PEDIDO:
+        messages.error(request, "Ese pedido ya no está pendiente.")
+        return redirect("pedidos")
+    if not p.hay:
+        messages.error(request, f"Todavía no llega: hay {cant(p.producto.existencia)} en anaquel y son {cant(p.cantidad)}.")
+        return redirect("pedidos")
+    ticket = m.Ticket(request.session)
+    apartado = None
+    if ticket.datos["lineas"] and ticket.datos.get("cliente") not in (None, p.cliente_id):
+        apartado = m.guardar_ticket(ticket, TicketGuardado.Tipo.ESPERA, request.user)
+    ticket.agregar_pedido(p)
+    aviso = f"{p.codigo} de {p.cliente} está en el ticket con el precio que se le dijo. Al cobrarlo queda entregado."
+    if apartado:
+        aviso += f" Lo que tenías quedó en espera ({apartado.para})."
+    messages.success(request, aviso)
+    return redirect("mostrador")
+
+
+@login_required
+@require_POST
+def pedido_cancelar(request, pk):
+    p = get_object_or_404(PedidoCliente, pk=pk)
+    if request.POST.get("confirmo") != "1":
+        messages.error(request, "Marca la casilla para confirmar que el cliente ya no lo quiere.")
+        return redirect("pedidos")
+    try:
+        enviada = m.cancelar_pedido(p)
+    except ValidationError as e:
+        messages.error(request, " ".join(e.messages))
+        return redirect("pedidos")
+    if enviada:
+        messages.warning(request, f"Pedido cancelado. {enviada.folio} ya se envió a {enviada.proveedor}: avísale o quédatelo para anaquel.")
+    else:
+        messages.success(request, f"Pedido de {p.codigo} para {p.cliente} cancelado; se quitó de la orden en borrador.")
+    return redirect("pedidos")
 
 
 @login_required
@@ -473,9 +698,91 @@ def remision(request, folio):
 
 @login_required
 def remisiones(request):
-    """Ventas para buscar y reimprimir su remisión: por folio o por cliente."""
+    """Ventas para buscar, reimprimir, cobrar abonos o cancelar: por folio o por cliente.
+    «Por cobrar» deja solo las de crédito con saldo, las más vencidas primero."""
     q = (request.GET.get("q") or "").strip()
+    por_cobrar = request.GET.get("ver") == "por-cobrar"
     ventas = Venta.objects.select_related("cliente").order_by("-fecha")
+    if por_cobrar:
+        ventas = ventas.filter(estado=Venta.Estado.CREDITO).order_by("vence", "fecha")
     if q:
         ventas = ventas.filter(Q(folio__icontains=q) | Q(cliente__nombre__icontains=q))
-    return render(request, "ventas/remisiones.html", {"ventas": ventas[:60], "q": q, "turno": _turno(request.user)})
+    pendiente = Venta.objects.filter(estado=Venta.Estado.CREDITO)
+    ctx = {"ventas": ventas[:60], "q": q, "por_cobrar": por_cobrar, "turno": _turno(request.user),
+           "hoy": timezone.localdate(), "saldo_total": pendiente.aggregate(s=Sum("saldo"))["s"] or 0,
+           "n_por_cobrar": pendiente.count()}
+    return render(request, "ventas/remisiones.html", ctx)
+
+
+def _venta(folio):
+    return get_object_or_404(Venta.objects.select_related("cliente", "usuario", "turno", "cancelada_por"), folio=folio)
+
+
+@login_required
+def venta(request, folio):
+    """Una venta: sus partidas, lo que se ha abonado, imprimir, abonar y cancelar."""
+    venta = _venta(folio)
+    turno = _turno(request.user)
+    hoy = timezone.localdate()
+    ctx = {"venta": venta, "turno": turno, "hoy": hoy,
+           "lineas": venta.lineas.select_related("producto", "producto__marca", "unidad"),
+           "abonos": venta.abonos.select_related("turno__usuario").order_by("fecha"),
+           "abonado": venta.total - venta.saldo if venta.estado != Venta.Estado.CANCELADA else 0,
+           "formas_abono": [c for c in FormaPago.choices if c[0] != FormaPago.CREDITO],
+           "no_cancelar": por_que_no_cancelar(venta, request.user),
+           "vencida": venta.estado == Venta.Estado.CREDITO and venta.vence and venta.vence < hoy,
+           "devolver_dinero": venta.forma_pago != FormaPago.CREDITO}
+    return render(request, "ventas/venta.html", ctx)
+
+
+@login_required
+@require_POST
+def venta_abonar(request, folio):
+    venta = _venta(folio)
+    turno = _turno(request.user)
+    if not turno:
+        messages.error(request, "Abre la caja para registrar el abono: el dinero entra al corte de tu turno.")
+        return redirect("venta", folio)
+    monto = _decimal(request.POST.get("monto"))
+    forma = request.POST.get("forma_pago", FormaPago.EFECTIVO)
+    if forma not in (FormaPago.EFECTIVO, FormaPago.TARJETA, FormaPago.TRANSFERENCIA):
+        forma = FormaPago.EFECTIVO
+    if monto is None:
+        messages.error(request, "Escribe cuánto abona.")
+        return redirect("venta", folio)
+    try:
+        registrar_abono(venta, monto, forma, turno)
+    except ValidationError as e:
+        messages.error(request, " ".join(e.messages))
+        return redirect("venta", folio)
+    venta.refresh_from_db()
+    if venta.estado == Venta.Estado.PAGADA:
+        messages.success(request, f"Abono de {pesos(monto)} registrado. {venta.folio} quedó liquidada.")
+    else:
+        messages.success(request, f"Abono de {pesos(monto)} registrado. Resta {pesos(venta.saldo)}.")
+    return redirect("venta", folio)
+
+
+@login_required
+@require_POST
+def venta_cancelar(request, folio):
+    venta = _venta(folio)
+    razon = por_que_no_cancelar(venta, request.user)
+    motivo = (request.POST.get("motivo") or "").strip()
+    if razon:
+        messages.error(request, razon)
+    elif not motivo:
+        messages.error(request, "Escribe el motivo de la cancelación.")
+    elif request.POST.get("confirmo") != "1":
+        messages.error(request, "Marca la casilla para confirmar la cancelación.")
+    else:
+        try:
+            cancelar_venta(venta, request.user, motivo)
+        except ValidationError as e:
+            messages.error(request, " ".join(e.messages))
+        else:
+            aviso = f"{venta.folio} cancelada. El inventario regresó al anaquel."
+            if venta.forma_pago != FormaPago.CREDITO:
+                aviso += f" Devuelve {pesos(venta.total)} al cliente; ya no cuenta en el corte."
+            messages.success(request, aviso)
+    return redirect("venta", folio)

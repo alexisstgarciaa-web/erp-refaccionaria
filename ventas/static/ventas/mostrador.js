@@ -255,8 +255,9 @@ verReciente();
 // barra de cobro, así la pantalla se queda donde estaba. Sin JavaScript, el formulario recarga como antes.
 (() => {
   if (!window.fetch || !window.DOMParser) return;
+  // data-recargar: cambian de cliente o de vehículo (espera, retomar) o abren otra pestaña (cotizar)
   const aplica = (f) => f instanceof HTMLFormElement && f.method.toLowerCase() === "post" &&
-                        f.closest(".mesa") && !f.closest(".por-codigo");
+                        f.closest(".mesa") && !f.closest(".por-codigo") && !f.hasAttribute("data-recargar") && !f.target;
   let cola = Promise.resolve(); // uno tras otro, en el orden en que se hicieron
 
   const enviar = async (f, datos) => {
@@ -299,7 +300,8 @@ verReciente();
     mesa.replaceWith(nueva);
     const cobro = doc.querySelector(".barra-cobro");
     if (cobro) document.querySelector(".barra-cobro")?.replaceWith(cobro);
-    nueva.querySelectorAll("details").forEach((d, i) => { if (abiertos[i]) d.open = true; });
+    // los que llevan data-servidor los abre o cierra el servidor (p. ej. alta de cliente con error)
+    nueva.querySelectorAll("details").forEach((d, i) => { if (abiertos[i] && !d.hasAttribute("data-servidor")) d.open = true; });
     const nuevasLineas = nueva.querySelector(".ticket-lineas");
     if (nuevasLineas) nuevasLineas.scrollTop = scroll;
     verReciente();

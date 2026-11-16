@@ -1,0 +1,51 @@
+{% extends "ventas/base.html" %}
+{% load erp %}
+{% block titulo %}Pedidos{% endblock %}
+{% block contenido %}
+<header class="pagina-titulo">
+  <h1>Pedidos de clientes</h1>
+  <p>Lo que quedó sobre pedido en mostrador. Arriba lo que ya llegó: avísale al cliente y cóbralo desde aquí.</p>
+</header>
+<nav class="pestanas" aria-label="Qué pedidos ver">
+  <a href="{% url 'pedidos' %}"{% if not cerrados %} aria-current="page"{% endif %}>Pendientes{% if n_pendientes %} <small>{{ n_pendientes }}</small>{% endif %}</a>
+  <a href="{% url 'pedidos' %}?ver=cerrados"{% if cerrados %} aria-current="page"{% endif %}>Entregados y cancelados</a>
+</nav>
+<form class="panel bloque buscar-remision" method="get" role="search">
+  {% if cerrados %}<input type="hidden" name="ver" value="cerrados">{% endif %}
+  <label class="campo">Cliente, código o teléfono <input name="q" value="{{ q }}" placeholder="Taller Ramírez, GP-37, 442…"></label>
+  <button class="btn" type="submit">Buscar</button>
+</form>
+<section class="panel bloque">
+  <table class="tabla tabla-pedidos">
+    <thead><tr><th>Pidió</th><th>Cliente</th><th>Pieza</th><th class="num">Cant.</th><th class="num">A cobrar</th><th>Situación</th><th></th></tr></thead>
+    <tbody>
+      {% for f in filas %}{% with p=f.p %}
+      <tr class="pedido-{{ f.situacion.0 }}">
+        <td>{{ p.fecha|date:"j M" }} <small class="tenue">{% if f.dias == 0 %}hoy{% elif f.dias == 1 %}ayer{% else %}hace {{ f.dias }} días{% endif %}</small></td>
+        <td><b>{{ p.cliente }}</b>{% if p.contacto %}<small class="tenue"> · {{ p.contacto }}</small>{% elif p.cliente.telefono %}<small class="tenue"> · {{ p.cliente.telefono }}</small>{% endif %}{% if p.vehiculo %}<br><small class="tenue">{{ p.vehiculo }}</small>{% endif %}</td>
+        <td><span class="mono">{{ p.codigo }}</span><br><small class="tenue">{{ p.descripcion }}</small></td>
+        <td class="num">{{ p.cantidad|cant }}</td>
+        <td class="num">{{ p.importe|pesos }}</td>
+        <td><span class="situacion situacion-{{ f.situacion.0 }}">{{ f.situacion.1 }}</span>{% if cerrados and p.venta_entrega %} <a class="folio" href="{% url 'venta' p.venta_entrega.folio %}">{{ p.venta_entrega.folio }}</a>{% endif %}</td>
+        <td class="num acciones-pedido">
+          {% if p.estado == 'PEDIDO' %}
+            {% if f.situacion.0 == 'listo' %}
+            <form method="post" action="{% url 'pedido_entregar' p.pk %}">{% csrf_token %}<button class="btn-sec btn-entregar" type="submit">Cobrar y entregar</button></form>
+            {% endif %}
+            <details class="pedido-cancelar">
+              <summary>Ya no lo quiere</summary>
+              <form method="post" action="{% url 'pedido_cancelar' p.pk %}">{% csrf_token %}
+                <label class="confirmo"><input type="checkbox" name="confirmo" value="1" required> Cancelar este pedido</label>
+                <button class="btn-sec" type="submit">Cancelar pedido</button>
+              </form>
+            </details>
+          {% endif %}
+        </td>
+      </tr>
+      {% endwith %}{% empty %}
+      <tr><td colspan="7" style="color: var(--texto-3)">{% if q %}No hay pedidos con «{{ q }}».{% elif cerrados %}Todavía no se ha entregado ni cancelado ninguno.{% else %}No hay pedidos pendientes. Lo que se deja sobre pedido en mostrador aparece aquí.{% endif %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

@@ -613,3 +613,154 @@ body.doc { background: #D9D9D4; padding-bottom: 40px; }
   .paga-con input { width: 100%; height: 40px; }
   body.con-cobro { padding-bottom: 230px; }
 }
+
+/* ───────── Remisiones: pestañas y detalle de una venta ───────── */
+.pestanas { display: flex; gap: 6px; margin-top: 18px; }
+.pestanas a { padding: 9px 20px; text-decoration: none; color: var(--texto-2); font: italic 700 14px var(--f-texto); text-transform: uppercase;
+  letter-spacing: .02em; background: var(--superficie); border: 1px solid var(--borde-2);
+  clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%); padding-inline: 22px; }
+.pestanas a[aria-current="page"] { background: var(--texto); border-color: var(--texto); color: #fff; }
+.pestanas small { margin-left: 6px; font: 600 12px var(--f-mono); text-transform: none; opacity: .8; }
+.pestanas + .buscar-remision { margin-top: 10px; }
+a.folio { font-weight: 700; color: var(--texto); text-underline-offset: 3px; }
+a.folio:hover { color: var(--primario); }
+.tenue { color: var(--texto-3); }
+.mono { font-family: var(--f-mono); font-size: 14px; }
+.migas { margin: 22px 0 -14px; font-size: 14px; }
+.migas a { color: var(--texto-2); font-weight: 600; text-decoration: none; }
+.migas a:hover { color: var(--primario); }
+.venta-titulo h1 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.venta-titulo h1 .estado { font-size: 13px; padding: 5px 12px; }
+.estado.debe { background: var(--texto); color: #fff; }
+.venta-cancelada { margin-top: 16px; }
+.venta-grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 0 24px; align-items: start; }
+.venta-total { display: flex; justify-content: flex-end; align-items: baseline; gap: 18px; margin: 0; padding: 14px 12px 0;
+  border-top: 2px solid var(--texto); font-size: 16px; }
+.venta-total b { font: italic 800 22px var(--f-titulo); font-stretch: 115%; }
+.venta-sub { margin: 22px 0 8px; font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--texto-3); font-style: normal; }
+.venta-pedido, .venta-abonos { list-style: none; margin: 0; padding: 0; }
+.venta-pedido li, .venta-abonos li { padding: 8px 0; border-bottom: 1px solid var(--borde-2); font-size: 14px; }
+.venta-abonos li { display: flex; justify-content: space-between; gap: 12px; }
+.venta-abonos li span { color: var(--texto-2); }
+.venta-cifras { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 10px 0 18px; }
+.venta-cifras div { padding: 10px 12px; background: var(--superficie-2); }
+.venta-cifras dt { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--texto-3); }
+.venta-cifras dd { margin: 2px 0 0; font: 600 18px var(--f-mono); }
+.venta-cifras .saldo dd { font: italic 800 24px/1.2 var(--f-titulo); font-stretch: 115%; }
+.abono-form { display: grid; gap: 12px; }
+.abono-form input { padding-left: 30px; text-align: right; font: 600 20px var(--f-mono); }
+.abono-pagos { background: var(--superficie-2); border: 1px solid var(--borde-2); }
+.abono-pagos label { flex: 1; }
+.abono-pagos span { text-align: center; color: var(--texto-2); height: 42px; line-height: 42px; padding: 0 8px; }
+.pagos.abono-pagos input:checked + span { background: var(--texto); color: #fff; }
+.venta-imprimir p { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 0; }
+.venta-imprimir .btn-sec { display: inline-flex; align-items: center; text-decoration: none; }
+.venta-cancelar { border-top: 4px solid var(--primario); }
+.cancelar-form { display: grid; gap: 12px; }
+.confirmo { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.confirmo input { width: 20px; height: 20px; accent-color: var(--primario); }
+.btn-peligro { background: var(--texto); }
+.btn-peligro:hover { background: var(--primario); }
+@media (max-width: 1000px) {
+  .venta-grid { grid-template-columns: 1fr; }
+  .pagos.abono-pagos { grid-row: auto; grid-column: auto; }
+}
+@media (max-width: 760px) {
+  .venta-partidas .tabla th:nth-child(4), .venta-partidas .tabla td:nth-child(4) { display: none; }
+  .pestanas { overflow-x: auto; }
+  .pestanas a { flex: 0 0 auto; white-space: nowrap; padding-inline: 14px; font-size: 13px; }
+}
+
+/* Alta rápida de cliente en el ticket */
+.cliente-nuevo { margin: 2px 0 10px; }
+.cliente-nuevo summary { display: inline-block; cursor: pointer; font-size: 13px; font-weight: 700; color: var(--texto-2); list-style: none;
+  text-decoration: underline; text-underline-offset: 3px; }
+.cliente-nuevo summary::-webkit-details-marker { display: none; }
+.cliente-nuevo summary:hover, .cliente-nuevo[open] summary { color: var(--primario); }
+.cliente-nuevo-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; padding: 14px; background: var(--superficie-2);
+  border-left: 4px solid var(--texto); }
+.cliente-nuevo-form label { display: grid; gap: 5px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--texto-3); }
+.cliente-nuevo-form label small { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.cliente-nuevo-form input, .cliente-nuevo-form select { height: 42px; font-size: 15px; text-transform: none; letter-spacing: 0; }
+.cliente-nuevo-form .con-signo input { padding-left: 28px; }
+.cliente-nuevo-form .mayusculas { text-transform: uppercase; }
+.cn-nombre, .cn-lista, .cn-nota, .cn-guardar { grid-column: 1 / -1; }
+.cn-nota { margin: 0; font-size: 13px; color: var(--texto-3); }
+.cn-guardar { justify-self: start; }
+.mesa.sin-ficha .cliente-nuevo-form { max-width: 520px; }
+
+/* Tickets en espera y cotizar */
+.espera { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; padding: 10px 12px; background: var(--superficie-2); border-left: 4px solid var(--primario); }
+.espera-titulo { flex-basis: 100%; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--texto-3); }
+.espera-item { display: flex; align-items: stretch; gap: 6px; flex: 1 1 260px; max-width: 360px; }
+.espera-item > form { flex: 1; min-width: 0; margin: 0; }
+.espera-retomar { all: unset; box-sizing: border-box; display: grid; width: 100%; padding: 7px 10px; cursor: pointer; background: var(--superficie);
+  border: 1px solid var(--borde-2); }
+.espera-retomar:hover { border-color: var(--texto); }
+.espera-retomar:focus-visible { outline: 2px solid var(--primario); outline-offset: 2px; }
+.espera-retomar b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.espera-retomar span { font-size: 12px; color: var(--texto-3); }
+.espera-quitar { position: relative; }
+.espera-quitar summary { display: grid; place-items: center; width: 34px; height: 100%; min-height: 40px; cursor: pointer; list-style: none;
+  color: var(--texto-3); border: 1px solid var(--borde-2); background: var(--superficie); }
+.espera-quitar summary::-webkit-details-marker { display: none; }
+.espera-quitar summary:hover, .espera-quitar[open] summary { color: var(--primario); border-color: var(--primario); }
+.espera-quitar form { position: absolute; right: 0; top: calc(100% + 4px); z-index: 4; margin: 0; }
+.espera-quitar form button { height: 36px; padding: 0 14px; border: 0; background: var(--primario); color: #fff; font: 700 13px var(--f-texto); cursor: pointer; }
+.ticket-acciones { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; margin: 10px -18px 0; padding: 12px 18px 6px; border-top: 1px solid var(--borde-2); }
+.ticket-acciones > form { margin: 0; }
+.ticket-acciones .btn-sec { height: 38px; font-size: 13px; }
+.cotizar { flex: 1; min-width: 0; }
+.cotizar summary { display: inline-flex; align-items: center; list-style: none; }
+.cotizar summary::-webkit-details-marker { display: none; }
+.cotizar[open] summary { background: var(--texto); color: #fff; border-color: var(--texto); }
+.cotizar form { display: grid; gap: 8px; margin: 8px 0 4px; }
+.cotizar label { display: grid; gap: 5px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--texto-3); }
+.cotizar label small { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.cotizar input { height: 40px; font-size: 14px; }
+.cotizar form .btn-sec { justify-self: start; }
+.mesa.sin-ficha .ticket-acciones { margin-inline: -24px; padding-inline: 24px; }
+.mesa.sin-ficha .cotizar form { max-width: 420px; }
+.en-linea { display: inline; margin: 0; }
+.en-linea button { all: unset; cursor: pointer; margin-left: 12px; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+.en-linea button:focus-visible { outline: 2px solid var(--primario); outline-offset: 2px; }
+.rem-sobre-pedido { margin-left: 4px; padding: 1px 5px; border: 1px solid var(--primario); color: var(--primario) !important; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+
+/* Pedidos de clientes */
+.insignia { display: inline-grid; place-items: center; min-width: 20px; height: 20px; margin-left: 4px; padding: 0 5px; background: var(--primario);
+  color: #fff; font: 700 12px/1 var(--f-mono); font-style: normal; vertical-align: 1px; }
+.secciones a[aria-current="page"] .insignia { background: #fff; color: var(--primario); }
+.ticket-contacto { display: grid; gap: 5px; margin: 10px 0 4px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--texto-3); }
+.ticket-contacto input { height: 40px; font-size: 14px; text-transform: none; letter-spacing: 0; }
+.tabla-pedidos td { vertical-align: top; }
+.tabla-pedidos tr.pedido-listo td { background: color-mix(in srgb, var(--hay) 7%, transparent); }
+.situacion { display: inline-block; font-size: 13px; font-weight: 600; }
+.situacion-listo { color: var(--hay); }
+.situacion-alerta { color: var(--primario); }
+.situacion-camino { color: var(--texto-2); }
+.situacion-cerrado { color: var(--texto-3); }
+.acciones-pedido { white-space: nowrap; }
+.acciones-pedido form { margin: 0; }
+.btn-entregar { height: 40px; background: var(--hay); border-color: var(--hay); color: #fff; font-style: italic; text-transform: uppercase; font-size: 13px; }
+.pedido-cancelar { margin-top: 6px; text-align: right; }
+.pedido-cancelar summary { cursor: pointer; list-style: none; font-size: 13px; color: var(--texto-3); text-decoration: underline; text-underline-offset: 2px; }
+.pedido-cancelar summary::-webkit-details-marker { display: none; }
+.pedido-cancelar form { display: grid; justify-items: end; gap: 8px; margin-top: 8px; }
+.pedido-cancelar .btn-sec { height: 36px; font-size: 13px; }
+@media (max-width: 760px) {
+  .tabla-pedidos thead { display: none; }
+  .tabla-pedidos tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 12px 0; border-bottom: 1px solid var(--borde-2); }
+  .tabla-pedidos td { padding: 0; border: 0; text-align: left; }
+  .tabla-pedidos td:nth-child(1) { grid-area: 1 / 1; font-size: 13px; }
+  .tabla-pedidos td:nth-child(5) { grid-area: 1 / 2; text-align: right; font-weight: 700; }
+  .tabla-pedidos td:nth-child(2) { grid-area: 2 / 1 / 3 / 3; }
+  .tabla-pedidos td:nth-child(3) { grid-area: 3 / 1; }
+  .tabla-pedidos td:nth-child(4) { grid-area: 3 / 2; text-align: right; }
+  .tabla-pedidos td:nth-child(4)::before { content: "× "; }
+  .tabla-pedidos td:nth-child(6) { grid-area: 4 / 1 / 5 / 3; }
+  .tabla-pedidos td:nth-child(7) { grid-area: 5 / 1 / 6 / 3; text-align: left; }
+  .tabla-pedidos td[colspan] { grid-column: 1 / -1; }
+  .pedido-cancelar { text-align: left; }
+  .pedido-cancelar form { justify-items: start; }
+}
