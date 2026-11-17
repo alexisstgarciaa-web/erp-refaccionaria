@@ -35,7 +35,7 @@ En el plan gratis el servicio se duerme tras 15 minutos sin uso (tarda cerca de 
 
 Sin estas variables el botón de correo usa el menú de compartir de la compu. Render gratis no deja salir correo por SMTP, así que hay dos caminos:
 
-- **Render de pago y Gmail:** `EMAIL_HOST=smtp.gmail.com`, `EMAIL_HOST_USER` (la cuenta de Gmail) y `EMAIL_HOST_PASSWORD` (una contraseña de aplicación de Google, con verificación en dos pasos). Sale de esa cuenta y queda en Enviados.
+- **Render de pago y Gmail:** `EMAIL_HOST_USER` (la cuenta @gmail.com) y `EMAIL_HOST_PASSWORD` (una contraseña de aplicación de Google, que pide la verificación en dos pasos; se puede pegar con o sin espacios). Con Google Workspace (correo con dominio propio en Gmail) agrega `EMAIL_HOST=smtp.gmail.com`. Sale de esa cuenta y queda en Enviados. El servicio web tiene que estar en un plan de pago: en el gratis Render bloquea los puertos de correo.
 - **Brevo por su API (sirve en Render gratis):** `BREVO_API_KEY` y `CORREO_REMITENTE` («Refaccionaria López <ventas@tudominio.mx>»). Brevo pide un dominio propio verificado; con un remitente @gmail o @outlook cambia la dirección y el correo suele caer en spam.
 
 `NEGOCIO_CORREO` (opcional) es a dónde contesta el cliente.

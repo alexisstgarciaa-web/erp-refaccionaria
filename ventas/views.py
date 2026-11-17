@@ -883,10 +883,16 @@ def mandar_correo(request, tipo, folio):
     msg.attach(d.archivo, d.pdf(), "application/pdf")
     try:
         msg.send()
-    except (OSError, smtplib.SMTPException, correo_backend.ErrorCorreo):
+    except (OSError, correo_backend.ErrorCorreo) as e:  # los errores de smtplib también son OSError
         logger.exception("No salió el correo de %s %s", d.titulo, d.folio)
-        return JsonResponse({"ok": False, "error": "No salió el correo: el servidor de correo no contestó o rechazó el "
-                                                   "envío. Intenta otra vez en un momento."}, status=502)
+        if isinstance(e, smtplib.SMTPAuthenticationError):
+            error = ("No salió el correo: la cuenta de correo del sistema no aceptó la contraseña. Avísale al "
+                     "administrador para que la revise.")
+        elif isinstance(e, (smtplib.SMTPException, correo_backend.ErrorCorreo)):
+            error = "No salió el correo: el servidor de correo no lo aceptó. Revisa la dirección o intenta más tarde."
+        else:
+            error = "No salió el correo: no se pudo conectar con el servidor de correo. Intenta otra vez en un momento."
+        return JsonResponse({"ok": False, "error": error}, status=502)
     respuesta = f"Listo: se mandó a {correo} con el PDF."
     if request.POST.get("guardar") and not d.publico and d.cliente.correo != correo:
         d.cliente.correo = correo

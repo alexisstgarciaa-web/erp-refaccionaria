@@ -1,6 +1,7 @@
 """Mandar la cotización o la remisión al cliente en PDF, por WhatsApp o correo, sin salir de la página."""
 import base64
 import json
+import smtplib
 import time
 from io import BytesIO
 from unittest import mock
@@ -170,7 +171,13 @@ class MandarTests(TestCase):
         with mock.patch.object(EmailMessage, "send", side_effect=OSError("timeout")), self.assertLogs("ventas.views", "ERROR"):
             r = self.client.post(url, {"correo": "nuevo@taller.mx", "guardar": "1"})
         self.assertEqual(r.status_code, 502)
-        self.assertIn("No salió el correo", r.json()["error"])
+        self.assertIn("no se pudo conectar", r.json()["error"])
+        # Gmail no acepta la contraseña de aplicación: se dice qué pasó
+        rechazo = smtplib.SMTPAuthenticationError(535, b"5.7.8 Username and Password not accepted")
+        with mock.patch.object(EmailMessage, "send", side_effect=rechazo), self.assertLogs("ventas.views", "ERROR"):
+            r = self.client.post(url, {"correo": "nuevo@taller.mx"})
+        self.assertEqual(r.status_code, 502)
+        self.assertIn("no aceptó la contraseña", r.json()["error"])
         cliente.refresh_from_db()
         self.assertEqual(cliente.correo, "compras@taller.mx")
         self.assertEqual(len(mail.outbox), 1)

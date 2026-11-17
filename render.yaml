@@ -1,7 +1,8 @@
-# Publicación de prueba en Render (plan gratis). En Render: New > Blueprint > este repositorio.
+# Publicación en Render. En Render: New > Blueprint > este repositorio.
+# Sin «plan»: el plan (gratis o de pago) se cambia en el panel de Render y este archivo no lo regresa al publicar.
+# En un Blueprint nuevo Render pone su plan de pago más chico.
 databases:
   - name: erp-db
-    plan: free
     databaseName: erp
     user: erp
 
@@ -9,7 +10,6 @@ services:
   - type: web
     name: erp-refaccionaria
     runtime: python
-    plan: free
     buildCommand: ./build.sh
     startCommand: gunicorn config.wsgi:application
     envVars:
