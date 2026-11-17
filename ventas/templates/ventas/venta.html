@@ -144,10 +144,11 @@
     {% endif %}
 
     <section class="panel bloque venta-imprimir">
-      <h2>Imprimir</h2>
+      <h2>Imprimir o mandar</h2>
       <p>
         <a class="btn-sec" href="{% url 'remision' venta.folio %}?imprimir=1" target="_blank" rel="noopener">Remisión carta</a>
         <a class="btn-sec" href="{% url 'remision' venta.folio %}?formato=ticket&imprimir=1" target="_blank" rel="noopener">Ticket 80 mm</a>
+        <button class="btn-sec" type="button" data-mandar="{% url 'mandar' 'remision' venta.folio %}">Mandar por WhatsApp o correo</button>
       </p>
     </section>
 

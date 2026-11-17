@@ -162,6 +162,25 @@ SOBREPRECIO_PEDIDO = os.environ.get("SOBREPRECIO_PEDIDO", "0.37")
 # Días que se respetan los precios de una cotización
 COTIZACION_VIGENCIA_DIAS = int(os.environ.get("COTIZACION_VIGENCIA_DIAS", "7"))
 
+# Correo con el PDF adjunto (cotizaciones y remisiones). Sin cuenta, el botón de correo abre el menú de compartir de
+# la compu con el PDF. Render gratis no deja salir por SMTP: o Render de pago con Gmail (EMAIL_HOST=smtp.gmail.com,
+# EMAIL_HOST_USER y una contraseña de aplicación en EMAIL_HOST_PASSWORD), o Brevo por su API (BREVO_API_KEY).
+BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_SSL = EMAIL_PORT == 465
+EMAIL_USE_TLS = not EMAIL_USE_SSL
+EMAIL_TIMEOUT = 20  # que un correo atorado no tumbe la página
+if BREVO_API_KEY:
+    EMAIL_BACKEND = "ventas.correo.BrevoBackend"
+CORREO_SERVIDOR = bool(BREVO_API_KEY or EMAIL_HOST)
+# Quién lo manda («Refaccionaria López <ventas@refalopez.mx>»; con Gmail, la misma cuenta) y a dónde contesta el cliente
+CORREO_REMITENTE = os.environ.get("CORREO_REMITENTE", "") or (f"{NEGOCIO_NOMBRE} <{EMAIL_HOST_USER}>" if EMAIL_HOST_USER else "")
+DEFAULT_FROM_EMAIL = CORREO_REMITENTE or "webmaster@localhost"
+NEGOCIO_CORREO = os.environ.get("NEGOCIO_CORREO", "")
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 

@@ -26,7 +26,7 @@
         <td class="num acciones-remision">
           <form method="post" action="{% url 'ticket_retomar' g.folio %}" class="en-linea">{% csrf_token %}<button type="submit">Pasar al ticket</button></form>
           <a href="{% url 'cotizacion' g.folio %}" target="_blank" rel="noopener">Imprimir</a>
-          <a href="{% url 'cotizacion' g.folio %}?enviar=1#enviar" target="_blank" rel="noopener">Mandar</a>
+          <button class="enlace-accion" type="button" data-mandar="{% url 'mandar' 'cotizacion' g.folio %}">Mandar</button>
         </td>
       </tr>
       {% empty %}

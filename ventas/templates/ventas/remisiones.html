@@ -31,6 +31,7 @@
           {% if v.estado == 'CREDITO' %}<a href="{% url 'venta' v.folio %}#abono">Abonar</a>{% elif v.estado == 'POR_COBRAR' %}<a href="{% url 'venta' v.folio %}#cobrar">Cobrar</a>{% endif %}
           <a href="{% url 'remision' v.folio %}" target="_blank" rel="noopener">Carta</a>
           <a href="{% url 'remision' v.folio %}?formato=ticket" target="_blank" rel="noopener">Ticket</a>
+          <button class="enlace-accion" type="button" data-mandar="{% url 'mandar' 'remision' v.folio %}">Mandar</button>
         </td>
       </tr>
       {% empty %}

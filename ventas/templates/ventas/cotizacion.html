@@ -19,35 +19,11 @@
     <a href="?formato=carta"{% if formato == 'carta' %} aria-current="true"{% endif %}>Hoja carta</a>
     <a href="?formato=ticket"{% if formato == 'ticket' %} aria-current="true"{% endif %}>Ticket 80 mm</a>
   </span>
-  <a href="#enviar">Mandar al cliente</a>
+  <button class="btn-sec" type="button" data-mandar="{% url 'mandar' 'cotizacion' g.folio %}">Mandar por WhatsApp o correo</button>
   <a href="{% url 'mostrador' %}">Volver al mostrador</a>
   {% endif %}
 </nav>
 
-{% if envio %}
-<section class="doc-enviar" id="enviar" aria-labelledby="enviar-titulo">
-  <h2 id="enviar-titulo">Mandar al cliente</h2>
-  <div class="doc-enviar-fila">
-    <label for="enviar-tel">WhatsApp</label>
-    <input id="enviar-tel" type="tel" inputmode="tel" value="{{ envio.telefono }}" placeholder="Celular a 10 dígitos" autocomplete="off"{% if envio.abrir and not envio.telefono and not envio.correo or envio.abrir and envio.telefono %} autofocus{% endif %}>
-    <a class="btn-primario" id="enviar-wa" href="{{ envio.whatsapp|default:'#' }}" target="_blank" rel="noopener"{% if not envio.whatsapp %} aria-disabled="true"{% endif %}>Enviar por WhatsApp</a>
-  </div>
-  <p class="doc-enviar-aviso" id="enviar-tel-nota" aria-live="polite">{% if not envio.telefono %}Sin número, WhatsApp te deja elegir el contacto.{% elif not envio.whatsapp %}El celular lleva 10 dígitos (si es extranjero, con + y la lada del país).{% endif %}</p>
-  <div class="doc-enviar-fila">
-    <label for="enviar-correo">Correo</label>
-    <input id="enviar-correo" type="email" value="{{ envio.correo }}" placeholder="cliente@correo.com" autocomplete="off"{% if envio.abrir and envio.correo and not envio.telefono %} autofocus{% endif %}>
-    <a class="btn-sec" id="enviar-mail" href="{{ envio.mailto }}">Enviar por correo</a>
-  </div>
-  <div class="doc-enviar-otros">
-    <button type="button" class="enlace" data-copiar="enlace">Copiar enlace</button>
-    <button type="button" class="enlace" data-copiar="texto_wa">Copiar mensaje</button>
-    <button type="button" class="enlace" id="enviar-compartir" hidden>Compartir…</button>
-    <span class="doc-enviar-copiado" role="status"></span>
-  </div>
-  <p class="doc-enviar-nota">Se abre tu WhatsApp o tu correo con el mensaje ya escrito: revisas y lo mandas tú. El cliente recibe un enlace que abre la cotización sin entrar al sistema; sirve {{ envio.dias }} días.</p>
-  {{ envio|json_script:"enviar-datos" }}
-</section>
-{% endif %}
 
 <article class="remision cotizacion">
   <header class="rem-cabeza">
@@ -103,7 +79,8 @@
   </div>
   <p class="rem-leyenda">Cotización, no es comprobante de venta ni fiscal.</p>
 </article>
-{% if envio %}<script src="{% static 'ventas/enviar.js' %}" defer></script>{% endif %}
+{% if not publica %}{% if abrir_mandar %}<span hidden data-mandar-abrir="{% url 'mandar' 'cotizacion' g.folio %}"></span>{% endif %}
+<script src="{% static 'ventas/mandar.js' %}" defer></script>{% endif %}
 {% if imprimir and not publica %}<script>window.addEventListener("load", () => setTimeout(() => window.print(), 300));</script>{% endif %}
 </body>
 </html>

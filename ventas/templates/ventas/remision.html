@@ -17,6 +17,7 @@
     <a href="?formato=carta"{% if formato == 'carta' %} aria-current="true"{% endif %}>Hoja carta</a>
     <a href="?formato=ticket"{% if formato == 'ticket' %} aria-current="true"{% endif %}>Ticket 80 mm</a>
   </span>
+  <button class="btn-sec" type="button" data-mandar="{% url 'mandar' 'remision' venta.folio %}">Mandar por WhatsApp o correo</button>
   {% if venta.es_remision %}<a href="{% url 'venta' venta.folio %}">Volver a {{ venta.folio }}</a>{% else %}<a href="{% url 'mostrador' %}">Volver al mostrador</a>{% endif %}
 </nav>
 
@@ -92,6 +93,7 @@
   </footer>
   <p class="rem-leyenda">Este documento no es un comprobante fiscal.{% if venta.estado == 'CANCELADA' %} <b>Venta cancelada.</b>{% endif %}</p>
 </article>
+<script src="{% static 'ventas/mandar.js' %}" defer></script>
 {% if imprimir %}<script>window.addEventListener("load", () => setTimeout(() => window.print(), 300));</script>{% endif %}
 </body>
 </html>

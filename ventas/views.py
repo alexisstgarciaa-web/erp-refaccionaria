@@ -1,3 +1,5 @@
+import logging
+import smtplib
 import unicodedata
 from decimal import Decimal, InvalidOperation
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -7,7 +9,8 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.core.validators import validate_email
 from django.db.models import Count, Sum
-from django.http import JsonResponse
+from django.core.mail import EmailMessage
+from django.http import Http404, HttpResponse, JsonResponse
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -21,6 +24,8 @@ from compras.models import PartidaListaProveedor
 
 from . import clientes as cli
 from . import compartir
+from . import correo as correo_backend
+from . import pdf
 from . import mostrador as m
 from . import nip as nips
 from . import remisiones as rem
@@ -30,6 +35,8 @@ from .servicios import (abrir_turno, cancelar_venta, cerrar_turno, cobrar_remisi
                         emitir_remision, esperado_en_caja, por_que_no_cancelar, precio_de, registrar_abono,
                         registrar_devolucion)
 from .templatetags.erp import cant, miles, pesos
+
+logger = logging.getLogger(__name__)
 
 
 def _volver(request, defecto="mostrador"):
@@ -173,6 +180,7 @@ def mostrador(request):
     folio = request.session.pop("ultima_venta", None)
     ctx["ultima_venta"] = Venta.objects.filter(folio=folio).first() if folio else None
     ctx["ultimo_pago"] = request.session.pop("ultimo_pago", None)
+    ctx["mandar"] = request.session.pop("mandar", None)
     ctx["puede_deshacer"] = bool(request.session.get("ticket_deshacer")) and not lineas
     ctx["listas_precio"] = ListaPrecio.objects.order_by("nombre")
     ctx["en_espera"] = TicketGuardado.objects.filter(tipo=TicketGuardado.Tipo.ESPERA, retomado__isnull=True
@@ -577,16 +585,24 @@ def poner_en_espera(request):
 @login_required
 @require_POST
 def cotizar(request):
-    """Guarda la cotización con folio y abre la hoja para imprimirla. El ticket se queda como está."""
+    """Guarda la cotización con folio y abre la hoja para imprimirla, o la ventana para mandarla en PDF por WhatsApp o
+    correo sin salir del mostrador. El ticket se queda como está."""
     veh, base = _vehiculo_post(request.POST)
     try:
         g = m.guardar_ticket(m.Ticket(request.session), TicketGuardado.Tipo.COTIZACION, request.user, veh, base,
                              nombre=request.POST.get("nombre", ""))
     except ValidationError as e:
+        if request.headers.get("X-Mandar"):
+            return JsonResponse({"error": " ".join(e.messages)}, status=400)
         messages.error(request, " ".join(e.messages))
         return _volver(request)
-    luego = "?enviar=1#enviar" if request.POST.get("luego") == "enviar" else "?imprimir=1"
-    return redirect(reverse("cotizacion", args=[g.folio]) + luego)
+    if request.POST.get("luego") != "enviar":
+        return redirect(reverse("cotizacion", args=[g.folio]) + "?imprimir=1")
+    mandar = reverse("mandar", args=["cotizacion", g.folio])
+    if request.headers.get("X-Mandar"):  # desde el mostrador con JavaScript: se abre la ventana ahí mismo
+        return JsonResponse({"folio": g.folio, "mandar": mandar})
+    request.session["mandar"] = mandar
+    return _volver(request)
 
 
 @login_required
@@ -638,26 +654,12 @@ def _cotizacion_ctx(request, g, formato=None):
 
 @login_required
 def cotizacion(request, folio):
-    """Cotización para imprimir, en hoja carta o ticket de 80 mm, con su vigencia, o para mandarla al cliente por
-    WhatsApp o correo con un enlace que abre sin entrar al sistema."""
-    from django.conf import settings
-
+    """Cotización para imprimir, en hoja carta o ticket de 80 mm, con su vigencia. «Mandar» abre la ventana para
+    mandarla en PDF (con ?enviar=1 se abre sola)."""
     g = get_object_or_404(TicketGuardado.objects.select_related("cliente", "usuario"), folio=folio,
                           tipo=TicketGuardado.Tipo.COTIZACION)
     ctx = _cotizacion_ctx(request, g)
-    enlace = request.build_absolute_uri(reverse("cotizacion_publica", args=[compartir.token(g)]))
-    negocio = settings.NEGOCIO_NOMBRE
-    texto_wa = compartir.mensaje(g, ctx["lineas"], enlace, negocio)
-    texto_correo = compartir.mensaje(g, ctx["lineas"], enlace, negocio, negritas=False)
-    asunto = f"Cotización {g.folio} · {negocio}"
-    telefono = g.cliente.telefono if g.cliente_id else ""
-    correo = g.cliente.correo if g.cliente_id else ""
-    ctx["envio"] = {
-        "enlace": enlace, "texto_wa": texto_wa, "texto_correo": texto_correo, "asunto": asunto,
-        "telefono": telefono, "correo": correo, "abrir": request.GET.get("enviar") == "1", "dias": compartir.ENLACE_DIAS,
-        "whatsapp": compartir.enlace_whatsapp(telefono, texto_wa) if compartir.whatsapp(telefono) or not telefono else "",
-        "mailto": compartir.enlace_correo(correo, asunto, texto_correo),
-    }
+    ctx["abrir_mandar"] = request.GET.get("enviar") == "1"
     return render(request, "ventas/cotizacion.html", ctx)
 
 
@@ -801,18 +803,96 @@ def caja(request):
 @login_required
 def remision(request, folio):
     """Remisión de una venta para imprimir, en hoja carta o en ticket de 80 mm. No es comprobante fiscal."""
-    from django.conf import settings
-
     venta = get_object_or_404(Venta.objects.select_related("cliente", "usuario", "lista"), folio=folio)
     formato = "ticket" if request.GET.get("formato") == "ticket" else "carta"
+    return render(request, "ventas/remision.html", {**_remision_ctx(venta), "formato": formato,
+                                                    "imprimir": request.GET.get("imprimir") == "1"})
+
+
+def _remision_ctx(venta):
+    from django.conf import settings
+
     pedido = venta.pedido or []
-    ctx = {"venta": venta, "formato": formato, "imprimir": request.GET.get("imprimir") == "1",
-           "lineas": venta.lineas.select_related("producto", "producto__marca", "unidad"),
-           "subtotal": venta.total - venta.iva, "pedido": pedido,
-           "pedido_total": sum((Decimal(p["importe"]) for p in pedido), Decimal(0)),
-           "abonado": venta.total - venta.saldo if venta.estado == Venta.Estado.CREDITO else None,
-           "rfc": settings.NEGOCIO_RFC, "direccion": settings.NEGOCIO_DIRECCION, "telefono": settings.NEGOCIO_TELEFONO}
-    return render(request, "ventas/remision.html", ctx)
+    return {"venta": venta, "lineas": venta.lineas.select_related("producto", "producto__marca", "unidad"),
+            "subtotal": venta.total - venta.iva, "pedido": pedido,
+            "pedido_total": sum((Decimal(p["importe"]) for p in pedido), Decimal(0)),
+            "abonado": venta.total - venta.saldo if venta.estado == Venta.Estado.CREDITO else None,
+            "rfc": settings.NEGOCIO_RFC, "direccion": settings.NEGOCIO_DIRECCION, "telefono": settings.NEGOCIO_TELEFONO}
+
+
+def _documento(request, tipo, folio):
+    """La cotización o la remisión que se va a mandar, con su PDF."""
+    from django.conf import settings
+
+    negocio = settings.NEGOCIO_NOMBRE
+    publico = m.cliente_mostrador().pk
+    if tipo == "cotizacion":
+        g = get_object_or_404(TicketGuardado.objects.select_related("cliente", "usuario"), folio=folio,
+                              tipo=TicketGuardado.Tipo.COTIZACION)
+        ctx = _cotizacion_ctx(request, g, formato="carta")
+        return compartir.de_cotizacion(g, negocio, lambda: pdf.cotizacion(ctx, negocio), g.cliente_id == publico)
+    if tipo == "remision":
+        venta = get_object_or_404(Venta.objects.select_related("cliente", "usuario", "lista"), folio=folio)
+        ctx = _remision_ctx(venta)
+        return compartir.de_remision(venta, negocio, lambda: pdf.remision(ctx, negocio), venta.cliente_id == publico)
+    raise Http404
+
+
+@login_required
+def mandar(request, tipo, folio):
+    """La ventana para mandar el PDF por WhatsApp o correo (se abre encima de la página, sin salir de ella)."""
+    from django.conf import settings
+
+    d = _documento(request, tipo, folio)
+    telefono = "" if d.publico else d.cliente.telefono
+    return render(request, "ventas/_mandar.html", {
+        "d": d, "telefono": telefono, "numero": compartir.whatsapp(telefono),
+        "correo": "" if d.publico else d.cliente.correo,
+        "asunto": d.asunto(settings.NEGOCIO_NOMBRE),
+        "cuerpo": d.cuerpo(settings.NEGOCIO_NOMBRE, settings.NEGOCIO_TELEFONO, settings.NEGOCIO_DIRECCION),
+        "correo_servidor": settings.CORREO_SERVIDOR, "remitente": settings.CORREO_REMITENTE,
+        "pdf_url": reverse("documento_pdf", args=[tipo, d.folio]), "correo_url": reverse("mandar_correo", args=[tipo, d.folio]),
+    })
+
+
+@login_required
+def documento_pdf(request, tipo, folio):
+    d = _documento(request, tipo, folio)
+    r = HttpResponse(d.pdf(), content_type="application/pdf")
+    r["Content-Disposition"] = f'{"attachment" if request.GET.get("descargar") else "inline"}; filename="{d.archivo}"'
+    return r
+
+
+@login_required
+@require_POST
+def mandar_correo(request, tipo, folio):
+    """Manda el PDF desde el servidor al correo del cliente. Contesta JSON para la ventana de mandar."""
+    from django.conf import settings
+
+    d = _documento(request, tipo, folio)
+    correo = "".join((request.POST.get("correo") or "").split()).lower()
+    try:
+        validate_email(correo)
+    except ValidationError:
+        return JsonResponse({"ok": False, "error": "Revisa el correo (algo como nombre@gmail.com)."}, status=400)
+    if not settings.CORREO_SERVIDOR:
+        return JsonResponse({"ok": False, "error": "El sistema todavía no tiene una cuenta de correo para mandar."}, status=503)
+    negocio = settings.NEGOCIO_NOMBRE
+    msg = EmailMessage(d.asunto(negocio), d.cuerpo(negocio, settings.NEGOCIO_TELEFONO, settings.NEGOCIO_DIRECCION),
+                       to=[correo], reply_to=[settings.NEGOCIO_CORREO] if settings.NEGOCIO_CORREO else None)
+    msg.attach(d.archivo, d.pdf(), "application/pdf")
+    try:
+        msg.send()
+    except (OSError, smtplib.SMTPException, correo_backend.ErrorCorreo):
+        logger.exception("No salió el correo de %s %s", d.titulo, d.folio)
+        return JsonResponse({"ok": False, "error": "No salió el correo: el servidor de correo no contestó o rechazó el "
+                                                   "envío. Intenta otra vez en un momento."}, status=502)
+    respuesta = f"Listo: se mandó a {correo} con el PDF."
+    if request.POST.get("guardar") and not d.publico and d.cliente.correo != correo:
+        d.cliente.correo = correo
+        d.cliente.save(update_fields=["correo"])
+        respuesta += " Quedó guardado en el cliente."
+    return JsonResponse({"ok": True, "mensaje": respuesta})
 
 
 def _pestanas():

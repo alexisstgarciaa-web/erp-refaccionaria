@@ -133,8 +133,10 @@
   {% if ultimo_pago %}<div class="recien-cambio"><span>Recibió {{ ultimo_pago.recibio }}</span><b>Cambio {{ ultimo_pago.cambio }}</b></div>{% endif %}
   <a class="btn-primario" href="{% url 'remision' ultima_venta.folio %}?imprimir=1" target="_blank" rel="noopener">Imprimir remisión</a>
   <a class="btn-sec" href="{% url 'remision' ultima_venta.folio %}?formato=ticket&amp;imprimir=1" target="_blank" rel="noopener">Ticket 80 mm</a>
+  <button class="btn-sec" type="button" data-mandar="{% url 'mandar' 'remision' ultima_venta.folio %}">Mandar por WhatsApp o correo</button>
 </section>
 {% endif %}
+{% if mandar %}<span hidden data-mandar-abrir="{{ mandar }}"></span>{% endif %}
 
 {# Sin vehículo elegido, el ticket ocupa todo el ancho; con vehículo, la hoja de piezas va a un lado #}
 <div class="mesa{% if paso != 'ficha' and not por_codigo %} sin-ficha{% endif %}">

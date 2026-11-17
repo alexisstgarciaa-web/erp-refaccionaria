@@ -65,13 +65,13 @@
     </form>
     <details class="cotizar">
       <summary class="btn-sec">Cotizar</summary>
-      <form method="post" action="{% url 'ticket_cotizar' %}" target="_blank" data-recargar>{% csrf_token %}
+      <form method="post" action="{% url 'ticket_cotizar' %}" target="_blank" data-recargar data-mandar-form>{% csrf_token %}
         <input type="hidden" name="next" value="{{ aqui }}">
         {% for k, v in base.items %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
         <label>A nombre de <small>opcional</small> <input name="nombre" maxlength="150" autocomplete="off" placeholder="{{ cliente }}"></label>
         <span class="cotizar-botones">
           <button class="btn-sec" type="submit" name="luego" value="imprimir">Imprimir</button>
-          <button class="btn-sec" type="submit" name="luego" value="enviar">Mandar por WhatsApp o correo</button>
+          <button class="btn-sec" type="submit" name="luego" value="enviar" formtarget="_self">Mandar por WhatsApp o correo</button>
         </span>
       </form>
     </details>

@@ -1,19 +1,21 @@
-"""Mandar una cotización al cliente por WhatsApp o correo.
+"""Mandar una cotización o una remisión al cliente, en PDF, por WhatsApp o correo.
 
-El cliente recibe un enlace de solo lectura (sin entrar al sistema) firmado con la SECRET_KEY: no se puede adivinar
-ni cambiar para ver otra cotización, y deja de servir a los ENLACE_DIAS. Los mensajes se abren en el WhatsApp o el
-correo de quien atiende, ya escritos; nada sale desde el servidor.
+WhatsApp no deja que un sistema mande un archivo a un número sin su API de Business, así que el PDF se pasa al menú
+de compartir del aparato (Windows, Android, iPhone) y quien atiende elige WhatsApp y el contacto. El correo sí sale
+desde el servidor con el PDF adjunto cuando hay cuenta configurada (settings.CORREO_SERVIDOR).
+
+Los enlaces firmados de antes (cotizacion/<token>/) siguen abriendo la cotización hasta ENLACE_DIAS.
 """
-from urllib.parse import quote
+from dataclasses import dataclass
+from typing import Callable
 
 from django.core import signing
 
-from .models import TicketGuardado, solo_digitos
-from .templatetags.erp import cant, pesos
+from .models import Cliente, TicketGuardado, solo_digitos
+from .templatetags.erp import pesos
 
 SAL = "ventas.cotizacion.enlace"
 ENLACE_DIAS = 60
-RENGLONES = 12  # en el mensaje; el enlace trae todo
 
 
 def token(g):
@@ -31,7 +33,7 @@ def cotizacion_de(texto):
 
 
 def whatsapp(telefono):
-    """Número para wa.me: 52 + los 10 dígitos de México. Con «+» adelante se respeta tal cual (extranjero).
+    """Número para WhatsApp: 52 + los 10 dígitos de México. Con «+» adelante se respeta tal cual (extranjero).
     Si no se puede armar, cadena vacía."""
     telefono = (telefono or "").strip()
     d = solo_digitos(telefono)
@@ -46,25 +48,6 @@ def whatsapp(telefono):
     return ""
 
 
-def mensaje(g, lineas, enlace, negocio, negritas=True):
-    """Texto de la cotización para WhatsApp (negritas con *) o correo."""
-    from .mostrador import cliente_mostrador
-
-    b = (lambda t: f"*{t}*") if negritas else (lambda t: t)
-    saludo = "Hola" if not g.nombre and g.cliente_id == cliente_mostrador().pk else f"Hola, {g.para}"
-    texto = [f"{saludo}. Le comparto la cotización {b(g.folio)} de {negocio}" + (f" para {g.vehiculo}" if g.vehiculo else "") + ":", ""]
-    for d in lineas[:RENGLONES]:
-        pedido = " (sobre pedido)" if d.get("pedido") else ""
-        texto.append(f"• {cant(d['cantidad'])} × {d['descripcion']} {d['codigo']}{pedido}: {pesos(d['importe'])}")
-    if len(lineas) > RENGLONES:
-        resto = len(lineas) - RENGLONES
-        texto.append(f"• y {resto} producto{'s' if resto > 1 else ''} más (vienen en el enlace)")
-    texto += ["", f"{b('Total: ' + pesos(g.total))} con IVA",
-              f"Precios válidos hasta el {fecha_larga(g.vence)}, sujetos a existencia.", "",
-              f"Puede verla o descargarla aquí: {enlace}"]
-    return "\n".join(texto)
-
-
 MESES = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre",
          "noviembre", "diciembre")
 
@@ -73,10 +56,52 @@ def fecha_larga(f):
     return f"{f.day} de {MESES[f.month - 1]}"
 
 
-def enlace_whatsapp(telefono, texto):
-    numero = whatsapp(telefono)
-    return f"https://wa.me/{numero}?text={quote(texto, safe='')}"
+@dataclass
+class Documento:
+    """Lo que hace falta para mandar una cotización o una remisión."""
+    tipo: str  # "cotizacion" o "remision" (va en la dirección)
+    titulo: str  # "Cotización" o "Remisión"
+    folio: str
+    cliente: Cliente
+    para: str  # a nombre de quién va
+    publico: bool  # Público en general: sin celular ni correo que proponer ni guardar
+    frase: str  # «Le comparto la cotización COT-000012 de … por $301 con IVA, válida hasta el 24 de noviembre.»
+    pdf: Callable[[], bytes]
+
+    @property
+    def archivo(self):
+        return f"{'Cotizacion' if self.tipo == 'cotizacion' else 'Remision'}-{self.folio}.pdf"
+
+    @property
+    def saludo(self):
+        return "Hola" if self.publico and self.para == str(self.cliente) else f"Hola, {self.para}"
+
+    @property
+    def texto(self):
+        """Lo que acompaña al PDF en WhatsApp."""
+        return f"{self.saludo}. {self.frase}"
+
+    def asunto(self, negocio):
+        return f"{self.titulo} {self.folio} · {negocio}"
+
+    def cuerpo(self, negocio, telefono="", direccion=""):
+        firma = [negocio] + ([f"Tel. {telefono}"] if telefono else []) + ([direccion] if direccion else [])
+        return "\n".join([f"{self.saludo}:", "", f"{self.frase} Va en el PDF adjunto.", "", "Quedamos a sus órdenes.", *firma])
 
 
-def enlace_correo(correo, asunto, texto):
-    return f"mailto:{quote((correo or '').strip(), safe='@')}?subject={quote(asunto, safe='')}&body={quote(texto, safe='')}"
+def de_cotizacion(g, negocio, pdf, publico):
+    frase = (f"Le comparto la cotización {g.folio} de {negocio} por {pesos(g.total)} con IVA, "
+             f"válida hasta el {fecha_larga(g.vence)}.")
+    return Documento("cotizacion", "Cotización", g.folio, g.cliente, g.para, publico, frase, pdf)
+
+
+def de_remision(venta, negocio, pdf, publico):
+    frase = f"Le comparto su remisión {venta.folio} de {negocio} por {pesos(venta.total)}."
+    if venta.estado == "CREDITO" and venta.vence:
+        frase += f" Queda a crédito, vence el {fecha_larga(venta.vence)}."
+    elif venta.estado == "CANCELADA":
+        frase += " Esta venta quedó cancelada."
+    else:
+        frase += " Gracias por su compra."
+    return Documento("remision", "Remisión", venta.folio, venta.cliente, str(venta.cliente), publico, frase, pdf)
+
