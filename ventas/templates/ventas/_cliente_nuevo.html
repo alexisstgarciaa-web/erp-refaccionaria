@@ -8,6 +8,7 @@
       <label class="cn-nombre">Nombre o razón social <input name="nombre" value="{{ cliente_nuevo.nombre }}" maxlength="150" required autocomplete="off"></label>
       <label class="cn-tel">Teléfono <input name="telefono" value="{{ cliente_nuevo.telefono }}" maxlength="20" inputmode="tel" autocomplete="off"></label>
       <label class="cn-rfc"><span>RFC <small>el genérico si no da</small></span> <input name="rfc" value="{{ cliente_nuevo.rfc|default:rfc_generico }}" maxlength="13" autocomplete="off" class="mayusculas" onfocus="this.select()"></label>
+      <label class="cn-correo"><span>Correo <small>para mandarle cotizaciones</small></span> <input name="correo" type="email" value="{{ cliente_nuevo.correo }}" maxlength="254" autocomplete="off" inputmode="email"></label>
       <label class="cn-lista">Lista de precios
         <select name="lista">{% for lp in listas_precio %}<option value="{{ lp.pk }}"{% if cliente_nuevo.lista == lp.pk|stringformat:"d" or not cliente_nuevo and lp.nombre == "Mostrador" %} selected{% endif %}>{{ lp }}</option>{% endfor %}</select>
       </label>

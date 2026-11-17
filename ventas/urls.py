@@ -24,6 +24,7 @@ urlpatterns = [
     path("ticket/descartar/<str:folio>/", views.descartar_espera, name="ticket_descartar"),
     path("cotizaciones/", views.cotizaciones, name="cotizaciones"),
     path("cotizaciones/<str:folio>/", views.cotizacion, name="cotizacion"),
+    path("cotizacion/<str:token>/", views.cotizacion_publica, name="cotizacion_publica"),  # la que abre el cliente
     path("caja/", views.caja, name="caja"),
     path("pedidos/", views.pedidos, name="pedidos"),
     path("pedidos/<int:pk>/entregar/", views.pedido_entregar, name="pedido_entregar"),

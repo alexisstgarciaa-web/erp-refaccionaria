@@ -270,12 +270,21 @@ class MostradorTests(TestCase):
         self.assertNotContains(self.client.get("/"), "Vaciaste el ticket.")
 
     def test_paga_con_cambio_y_foco(self):
-        r = self.client.get("/")
-        self.assertRegex(r.content.decode(), r'id="codigo"[^>]*autofocus')  # se empieza por el código
-        self.assertNotRegex(r.content.decode(), r'id="q"[^>]*autofocus')
+        html = self.client.get("/").content.decode()
+        self.assertRegex(html, r'id="cliente-q"[^>]*autofocus')  # venta nueva: se empieza por el cliente
+        self.assertNotRegex(html, r'id="codigo"[^>]*autofocus')
+        self.assertNotRegex(html, r'id="q"[^>]*autofocus')
+        self.assertLess(html.index('class="panel cliente-panel'), html.index('class="panel vehiculo-panel'))
+        # ya elegido (aunque sea Público en general), sigue el código
+        self.client.post(reverse("ticket_cliente"), {"cliente": m.cliente_mostrador().pk})
+        html = self.client.get("/").content.decode()
+        self.assertRegex(html, r'id="codigo"[^>]*autofocus')
+        self.assertNotRegex(html, r'id="cliente-q"[^>]*autofocus')
         self.client.post(reverse("caja"), {"nip": NIP, "accion": "abrir", "fondo": "500"})
         self.client.post(reverse("ticket_agregar"), {"clave": f"producto:{self.fram.pk}"})
+        html = self.client.get("/").content.decode()
         self.assertContains(self.client.get("/"), 'id="paga-con"')
+        self.assertRegex(html, r'id="codigo"[^>]*autofocus')  # con piezas en el ticket, el código
         # no alcanza: no cobra
         r = self.client.post(reverse("ticket_cobrar"), {"nip": NIP, "forma_pago": "EFECTIVO", "paga_con": "50"}, follow=True)
         self.assertContains(r, "Paga con $50 y son $98: faltan $48.")

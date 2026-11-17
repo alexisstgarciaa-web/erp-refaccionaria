@@ -40,6 +40,7 @@ class Cliente(models.Model):
     rfc = models.CharField("RFC", max_length=13, default=RFC_GENERICO, validators=[rfc_valido],
                            help_text=f"Si no da RFC se queda el genérico {RFC_GENERICO}.")
     telefono = models.CharField(max_length=20, blank=True)
+    correo = models.EmailField(blank=True, help_text="Para mandarle cotizaciones")
     calle = models.CharField(max_length=120, blank=True)
     numero_exterior = models.CharField("núm. exterior", max_length=20, blank=True)
     numero_interior = models.CharField("núm. interior", max_length=20, blank=True)

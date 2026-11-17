@@ -214,26 +214,45 @@ option, optgroup { background: var(--fondo); color: var(--texto); }
 .nota { margin: 18px 0 0; max-width: 72ch; font-size: 13px; color: var(--texto-3); }
 
 /* Ticket (detalle; el total va en la barra de abajo) */
-.ticket { position: sticky; top: 90px; padding: 18px 18px 8px; }
-.ticket.ticket-suelto { position: static; } /* más alto que la pantalla: que se mueva con la página (mostrador.js) */
+/* Junto a la hoja de piezas el ticket se queda fijo y nunca mide más que la pantalla (mostrador.js le pone el
+   alto exacto): lo que no cabe se desplaza dentro de sus renglones, y la página no se mueve al elegir piezas. */
+.ticket { position: sticky; top: 90px; padding: 18px 18px 8px; display: flex; flex-direction: column;
+  max-height: calc(100vh - 200px); overflow-y: auto; overscroll-behavior: contain; }
+.ticket > :not(.ticket-lineas) { flex-shrink: 0; }
 .ticket-cabeza { display: flex; justify-content: space-between; align-items: baseline; }
 .ticket-cabeza h2 { font-size: 20px; }
 .ticket-cabeza span { font-size: 12px; color: var(--texto-3); font-family: var(--f-mono); }
-.ticket-cliente { margin: 14px 0 6px; }
-.ticket-cliente-cabeza { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 4px; }
-.ticket-cliente-titulo { font-size: 12px; font-weight: 600; color: var(--texto-3); text-transform: uppercase; letter-spacing: .06em; }
-.ticket-cliente small { text-transform: none; letter-spacing: 0; font-weight: 400; }
-.ticket-cliente-publico { margin: 0; }
-.ticket-cliente-publico button { all: unset; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--texto-2);
-  text-decoration: underline; text-underline-offset: 2px; }
-.ticket-cliente-publico button:focus-visible { outline: 2px solid var(--primario); outline-offset: 2px; }
-.ticket-cliente-actual { margin: 0 0 8px; font-size: 16px; line-height: 1.35; }
-.ticket-cliente-actual .mono { margin-left: 4px; font-size: 13px; color: var(--primario); }
-.ticket-cliente-credito { display: block; font-size: 13px; color: var(--texto-2); }
-.ticket-cliente-vencido, .rn-vencido { margin: -4px 0 8px; font-size: 13px; font-weight: 700; color: var(--rojo); }
+.ticket-para { margin: 10px 0 2px; font-size: 14px; color: var(--texto-2); }
+.ticket-para b { color: var(--texto); }
+.ticket-para .mono { margin-left: 2px; font-size: 12px; color: var(--primario); }
+.ticket-para a { margin-left: 8px; font-size: 13px; font-weight: 600; color: var(--texto-2); }
+
+/* ───────── Cliente: lo primero de cada venta ───────── */
+.cliente-panel { margin-top: 24px; padding: 18px 22px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 14px 32px; align-items: start; }
+.cliente-panel:not(.es-publico) { border-left: 5px solid var(--primario); }
+.cliente-panel + .vehiculo-panel { margin-top: 16px; }
+.cliente-panel-titulo, .cliente-buscar label { display: block; margin: 0 0 7px; font: 600 12px var(--f-texto); letter-spacing: .06em;
+  text-transform: uppercase; color: var(--texto-3); }
+.cliente-panel-titulo small { margin-left: 4px; text-transform: none; letter-spacing: 0; font-weight: 400; }
+.cliente-panel-nombre { margin: 0; font: italic 800 26px/1.15 var(--f-titulo); font-stretch: 112%; overflow-wrap: anywhere; }
+.cliente-panel-nombre .mono { margin-left: 6px; font: 600 14px var(--f-mono); font-style: normal; color: var(--primario); white-space: nowrap; }
+.cliente-panel.es-publico .cliente-panel-nombre b { color: var(--texto-2); }
+.cliente-panel-credito { margin: 6px 0 0; font-size: 14px; color: var(--texto-2); }
+.cliente-panel-vencido, .rn-vencido { margin: 6px 0 0; font-size: 14px; font-weight: 700; color: var(--rojo); }
+.cliente-panel-buscar { min-width: 0; }
+.cliente-panel-pie { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; margin: 8px 0 2px; }
+.cliente-panel-ayuda { margin: 0; font-size: 13px; color: var(--texto-3); }
+.cliente-panel-ayuda b { color: var(--texto-2); }
+.cliente-panel-publico { margin: 0; }
+.cliente-panel-publico button { all: unset; cursor: pointer; font-size: 14px; font-weight: 700; color: var(--texto);
+  text-decoration: underline; text-underline-offset: 3px; }
+.cliente-panel-publico button:hover { color: var(--primario); }
+.cliente-panel-publico button:focus-visible { outline: 2px solid var(--primario); outline-offset: 2px; }
+.cliente-panel .cliente-nuevo { margin: 6px 0 0; }
+.cliente-panel .cliente-nuevo-form { max-width: 640px; }
 .rn-vencido { margin: 4px 0 0; }
 .cliente-buscar { position: relative; }
-.cliente-buscar-campo { height: 44px; font-size: 15px; }
+.cliente-buscar-campo { font-size: 17px; }
 .cliente-buscar .sugerencias { min-width: 100%; }
 .sug-cliente-dato { font-size: 12px; color: var(--texto-3); white-space: nowrap; }
 .sug-cliente-vencido { font-size: 12px; font-weight: 700; color: var(--rojo); white-space: nowrap; }
@@ -243,7 +262,7 @@ option, optgroup { background: var(--fondo); color: var(--texto); }
 .ticket-nota { margin: 4px 0 12px; font-size: 12px; color: var(--texto-3); }
 .ticket-orden { margin: 12px 0 0; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--texto-3); }
 /* Las piezas se desplazan dentro del ticket: cabeza y cliente quedan a la vista */
-.ticket-lineas { max-height: calc(100vh - 340px); min-height: 150px; overflow-y: auto; overscroll-behavior: contain; margin: 6px -18px 0; padding: 0 18px;
+.ticket-lineas { flex: 0 1 auto; min-height: 150px; overflow-y: auto; overscroll-behavior: contain; margin: 6px -18px 0; padding: 0 18px;
   border-top: 1px solid var(--borde-2); }
 .renglon.reciente { margin: 0 -18px; padding: 12px 18px 12px 14px; border-left: 4px solid var(--hay);
   background: color-mix(in srgb, var(--hay) 8%, #fff); animation: renglon-recien 2.4s ease-out; }
@@ -287,6 +306,7 @@ option, optgroup { background: var(--fondo); color: var(--texto); }
   border-radius: var(--radio-btn); background: var(--cobrar-fondo); color: var(--cobrar-texto); font: 800 18px var(--f-texto);
   text-decoration: none; cursor: pointer; white-space: nowrap; }
 .cobrar:disabled { opacity: .35; cursor: not-allowed; }
+.cobrar-monto { margin-left: .35em; } /* en flex el espacio de antes se pierde */
 
 /* ───────── Caja y entrar ───────── */
 .pagina-titulo { margin: 28px 0 8px; }
@@ -390,6 +410,31 @@ body.doc { background: #D9D9D4; padding-bottom: 40px; }
 .doc-formatos { display: flex; gap: 4px; padding: 4px; background: #1E1F22; }
 .doc-formatos a { padding: 8px 14px; text-decoration: none; color: var(--barra-texto-2); font-size: 14px; }
 .doc-formatos a[aria-current] { background: #fff; color: #111214; }
+/* Mandar la cotización al cliente (solo en pantalla) */
+.doc-enviar { width: 216mm; max-width: calc(100% - 32px); margin: 24px auto 0; padding: 18px 22px; background: #fff;
+  border-left: 5px solid var(--primario); box-shadow: 0 10px 40px rgba(0, 0, 0, .12); scroll-margin-top: 84px; }
+.doc-enviar h2 { margin: 0 0 12px; font: italic 800 20px var(--f-titulo); font-stretch: 115%; text-transform: uppercase; }
+.doc-enviar-fila { display: grid; grid-template-columns: 96px minmax(0, 1fr) 210px; gap: 10px; align-items: center; margin-top: 10px; }
+.doc-enviar-fila label { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--texto-2); }
+.doc-enviar-fila input { height: 44px; font-size: 16px; }
+.doc-enviar-fila .btn-primario, .doc-enviar-fila .btn-sec { height: 44px; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+.doc-enviar-fila [aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
+.doc-enviar-aviso { margin: 4px 0 0 106px; min-height: 18px; font-size: 13px; color: var(--texto-3); }
+.doc-enviar-otros { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--borde); }
+.doc-enviar-otros button { all: unset; cursor: pointer; font-size: 14px; font-weight: 700; color: var(--texto); text-decoration: underline; text-underline-offset: 3px; }
+.doc-enviar-otros button:hover { color: var(--primario); }
+.doc-enviar-otros button:focus-visible { outline: 2px solid var(--primario); outline-offset: 2px; }
+.doc-enviar-otros button[hidden] { display: none; }
+.doc-enviar-copiado { font-size: 13px; color: var(--hay); font-weight: 600; }
+.doc-enviar-nota { margin: 10px 0 0; font-size: 13px; color: var(--texto-3); }
+.doc-aviso { min-height: 0; }
+.doc-aviso h1 { margin: 22px 0 8px; font-size: 24px; }
+@media (max-width: 640px) {
+  .doc-herramientas { position: static; gap: 10px 14px; padding: 10px 16px; }
+  .doc-enviar { padding: 16px; }
+  .doc-enviar-fila { grid-template-columns: 1fr; gap: 6px; }
+  .doc-enviar-aviso { margin-left: 0; }
+}
 .remision { position: relative; width: 216mm; max-width: calc(100% - 32px); min-height: 279mm; margin: 24px auto 0; padding: 14mm;
   background: #fff; color: #0C0C0D; font-size: 13px; box-shadow: 0 10px 40px rgba(0, 0, 0, .18); }
 .remision.cancelada::after { content: "CANCELADA"; position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none;
@@ -448,7 +493,7 @@ body.doc { background: #D9D9D4; padding-bottom: 40px; }
 
 @media print {
   body.doc { background: #fff; padding: 0; }
-  .doc-herramientas { display: none; }
+  .doc-herramientas, .doc-enviar { display: none; }
   .remision { width: auto; max-width: none; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
   .rem-tabla th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .rem-cabeza, .rem-credito { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -493,7 +538,7 @@ body.doc { background: #D9D9D4; padding-bottom: 40px; }
   .vehiculo-panel { grid-template-columns: 1fr; }
   .buscador { padding-left: 0; border-left: 0; }
   .mesa { grid-template-columns: 1fr; }
-  .ticket { position: static; }
+  .ticket { position: static; display: block; max-height: none; overflow: visible; }
   .ticket-lineas { max-height: none; min-height: 0; overflow: visible; }
   .barra-cobro .dentro { grid-template-columns: auto 1fr; gap: 10px 20px; padding-block: 12px; }
   .cobro-resumen { display: none; }
@@ -510,6 +555,8 @@ body.doc { background: #D9D9D4; padding-bottom: 40px; }
   .usuario .quien { display: none; }
   .secciones { order: 3; width: 100%; overflow-x: auto; }
   .vehiculo-panel { padding: 16px; }
+  .cliente-panel { grid-template-columns: 1fr; padding: 16px; gap: 12px; }
+  .cliente-panel-nombre { font-size: 22px; }
   .selector { grid-template-columns: 1fr 1fr; }
   .selector .btn-primario { grid-column: 1 / -1; }
   .captura { grid-template-columns: 1fr 1fr; padding: 14px 16px; }
@@ -551,8 +598,7 @@ body.doc { background: #D9D9D4; padding-bottom: 40px; }
 .ticket-columnas { display: none; }
 @media (min-width: 1101px) {
   .mesa.sin-ficha { grid-template-columns: 1fr; }
-  .mesa.sin-ficha .ticket { position: static; padding: 20px 24px 10px; }
-  .mesa.sin-ficha .ticket-cliente { max-width: 420px; }
+  .mesa.sin-ficha .ticket { position: static; display: block; max-height: none; overflow: visible; padding: 20px 24px 10px; }
   .mesa.sin-ficha .ticket-lineas { max-height: none; min-height: 0; overflow: visible; margin: 0 -24px; padding: 0 24px; border-top: 0; }
   .mesa.sin-ficha .ticket-columnas, .mesa.sin-ficha .renglon {
     display: grid; grid-template-columns: minmax(150px, 230px) minmax(0, 1fr) auto 120px; gap: 0 22px; align-items: center; }
@@ -701,10 +747,9 @@ a.folio:hover { color: var(--primario); }
 .cliente-nuevo-form input, .cliente-nuevo-form select { height: 42px; font-size: 15px; text-transform: none; letter-spacing: 0; }
 .cliente-nuevo-form .con-signo input { padding-left: 28px; }
 .cliente-nuevo-form .mayusculas { text-transform: uppercase; }
-.cn-nombre, .cn-lista, .cn-nota, .cn-guardar { grid-column: 1 / -1; }
+.cn-nombre, .cn-correo, .cn-lista, .cn-nota, .cn-guardar { grid-column: 1 / -1; }
 .cn-nota { margin: 0; font-size: 13px; color: var(--texto-3); }
 .cn-guardar { justify-self: start; }
-.mesa.sin-ficha .cliente-nuevo-form { max-width: 520px; }
 .cliente-nuevo-form [hidden] { display: none; }
 /* Dirección: con el código postal se llenan estado y municipio y la colonia se elige de la lista */
 .cn-direccion { grid-column: 1 / -1; padding-top: 8px; border-top: 1px solid var(--borde); }
@@ -754,6 +799,7 @@ a.folio:hover { color: var(--primario); }
 .cotizar label small { text-transform: none; letter-spacing: 0; font-weight: 400; }
 .cotizar input { height: 40px; font-size: 14px; }
 .cotizar form .btn-sec { justify-self: start; }
+.cotizar-botones { display: flex; flex-wrap: wrap; gap: 8px; }
 .mesa.sin-ficha .ticket-acciones { margin-inline: -24px; padding-inline: 24px; }
 .mesa.sin-ficha .cotizar form { max-width: 420px; }
 .en-linea { display: inline; margin: 0; }

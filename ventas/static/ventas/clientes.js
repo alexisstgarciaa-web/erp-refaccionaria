@@ -1,6 +1,7 @@
 // Buscador de clientes (ticket del mostrador y Remisiones › Nueva): folio, celular o nombre; con el campo
 // vacío muestra los últimos atendidos. Flechas y Enter eligen; Esc cierra; F4 lo enfoca desde cualquier parte.
 // Al elegir dispara «cliente-elegido» en el campo; con data-elegir="enviar" además manda su formulario.
+// Con data-vacio="id", Enter sin escribir nada deja el cliente como está y pasa a ese campo.
 // Todo se escucha desde el documento porque el ticket se reemplaza sin recargar la página.
 (() => {
   const estado = new WeakMap(); // por campo: {lista, marcado, espera, pedido}
@@ -76,6 +77,12 @@
   document.addEventListener("focusin", (e) => { const i = campo(e); if (i && !i.value.trim()) buscar(i, true); });
   document.addEventListener("input", (e) => { const i = campo(e); if (i) { datos(i).enterPendiente = false; buscar(i); } });
   document.addEventListener("focusout", (e) => { const i = campo(e); if (i) setTimeout(() => cerrar(i), 150); });
+  // «Cambiar» en el ticket: lleva al buscador de clientes
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest?.("[data-enfocar]");
+    const destino = a && document.getElementById(a.dataset.enfocar);
+    if (destino) { e.preventDefault(); destino.scrollIntoView({ block: "center" }); destino.focus({ preventScroll: true }); }
+  });
   document.addEventListener("keydown", (e) => {
     if (e.key === "F4" && !document.querySelector("dialog[open]")) {
       const i = [...document.querySelectorAll("input[data-clientes]")].find((x) => x.offsetParent);
@@ -93,6 +100,7 @@
       e.preventDefault(); // aquí Enter elige, nunca manda el formulario tal cual
       if (abierta && d.lista[d.marcado]) elegir(i, d.lista[d.marcado]);
       else if (i.value.trim()) { d.enterPendiente = true; buscar(i, true); } // si sale uno solo, se elige
+      else if (i.dataset.vacio) { cerrar(i); document.getElementById(i.dataset.vacio)?.focus(); } // sigue el mismo cliente
     } else if (e.key === "Escape" && abierta) {
       e.preventDefault();
       cerrar(i);

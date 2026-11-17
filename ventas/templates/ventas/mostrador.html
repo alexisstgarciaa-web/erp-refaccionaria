@@ -4,6 +4,38 @@
 {% block cuerpo %}con-cobro{% endblock %}
 {% block contenido %}
 
+{# Cada venta empieza por el cliente: de él salen la lista de precios, el crédito y lo que debe #}
+<section class="panel cliente-panel{% if cliente.pk == publico.pk %} es-publico{% endif %}" aria-labelledby="cliente-titulo">
+  <div class="cliente-panel-actual">
+    <h2 class="cliente-panel-titulo" id="cliente-titulo">Cliente <small>lista {{ cliente.lista_precio }}</small></h2>
+    <p class="cliente-panel-nombre"><b>{{ cliente }}</b> <span class="mono">{{ cliente.folio }}</span></p>
+    {% if cliente.dias_credito %}<p class="cliente-panel-credito">Crédito {{ cliente.dias_credito }} días · disponible {{ cliente_disponible|pesos }}</p>{% endif %}
+    {% if cliente_vencido %}<p class="cliente-panel-vencido">Debe {{ cliente_vencido|pesos }} vencido · a crédito pide NIP de administrador</p>{% endif %}
+  </div>
+  <div class="cliente-panel-buscar">
+    <form method="post" action="{% url 'ticket_cliente' %}" class="cliente-buscar" data-enter="normal">{% csrf_token %}
+      <input type="hidden" name="next" value="{{ aqui }}">
+      <input type="hidden" name="cliente" value="{{ cliente.pk }}">
+      <label for="cliente-q">{% if cliente.pk == publico.pk %}¿Quién es el cliente?{% else %}Cambiar de cliente{% endif %}</label>
+      <input id="cliente-q" class="cliente-buscar-campo" data-clientes="{% url 'clientes_buscar' %}" data-elegir="enviar" data-vacio="codigo"
+             role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="cliente-sugerencias" aria-describedby="cliente-ayuda"
+             autocomplete="off" spellcheck="false" placeholder="Folio, celular o nombre · F4"{% if enfocar_cliente %} autofocus{% endif %}>
+      <div class="sugerencias" id="cliente-sugerencias" role="listbox" aria-label="Clientes" hidden></div>
+    </form>
+    <div class="cliente-panel-pie">
+      <p class="cliente-panel-ayuda" id="cliente-ayuda"><b>Enter</b> sin escribir: sigue con {% if cliente.pk == publico.pk %}Público en general{% else %}{{ cliente }}{% endif %} y pasa al código</p>
+      {% if cliente.pk != publico.pk %}
+      <form method="post" action="{% url 'ticket_cliente' %}" class="cliente-panel-publico">{% csrf_token %}
+        <input type="hidden" name="next" value="{{ aqui }}">
+        <input type="hidden" name="cliente" value="{{ publico.pk }}">
+        <button type="submit">Público en general</button>
+      </form>
+      {% endif %}
+    </div>
+    {% include "ventas/_cliente_nuevo.html" %}
+  </div>
+</section>
+
 <section class="panel vehiculo-panel" aria-label="Vehículo del cliente">
   <form class="selector" method="get" action="{% url 'mostrador' %}" data-listas="{% url 'vehiculo_listas' %}">
     <label class="lista">
@@ -68,7 +100,7 @@
     <label for="codigo">Código o descripción</label>
     <input name="codigo" id="codigo" autocomplete="off" autocapitalize="characters" spellcheck="false"
            role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sugerencias"
-           placeholder="Escanea o teclea: PH966B, GP-37, filtro aire jetta"{% if enfocar_codigo or paso == 'marca' or paso == 'ficha' %} autofocus{% endif %}>
+           placeholder="Escanea o teclea: PH966B, GP-37, filtro aire jetta"{% if not enfocar_cliente %}{% if enfocar_codigo or paso == 'marca' or paso == 'ficha' %} autofocus{% endif %}{% endif %}>
     <div class="sugerencias" id="sugerencias" role="listbox" aria-label="Sugerencias" hidden></div>
   </div>
   <div class="captura-cantidad">

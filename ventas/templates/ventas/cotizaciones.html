@@ -4,7 +4,7 @@
 {% block contenido %}
 <header class="pagina-titulo">
   <h1>Cotizaciones</h1>
-  <p>Cotizaciones impresas desde el mostrador. Al pasar una al ticket se respetan sus precios mientras esté vigente.</p>
+  <p>Cotizaciones hechas desde el mostrador, para imprimir o mandar al cliente por WhatsApp o correo. Al pasar una al ticket se respetan sus precios mientras esté vigente.</p>
 </header>
 {% include "ventas/_pestanas.html" with pestana="cotizaciones" %}
 <form class="panel bloque buscar-remision" method="get" role="search">
@@ -26,6 +26,7 @@
         <td class="num acciones-remision">
           <form method="post" action="{% url 'ticket_retomar' g.folio %}" class="en-linea">{% csrf_token %}<button type="submit">Pasar al ticket</button></form>
           <a href="{% url 'cotizacion' g.folio %}" target="_blank" rel="noopener">Imprimir</a>
+          <a href="{% url 'cotizacion' g.folio %}?enviar=1#enviar" target="_blank" rel="noopener">Mandar</a>
         </td>
       </tr>
       {% empty %}

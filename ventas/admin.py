@@ -15,7 +15,7 @@ class ClienteAdmin(ConComas, admin.ModelAdmin):
     search_fields = ["nombre", "rfc", "telefono", "colonia", "municipio"]
     list_filter = ["lista_precio", "activo", "estado"]
     fieldsets = [
-        (None, {"fields": ["nombre", "rfc", "telefono", "lista_precio", "activo"]}),
+        (None, {"fields": ["nombre", "rfc", "telefono", "correo", "lista_precio", "activo"]}),
         ("Dirección", {"fields": ["codigo_postal", "colonia", "municipio", "estado", "calle",
                                   ("numero_exterior", "numero_interior")]}),
         ("Crédito", {"fields": ["dias_credito", "limite_credito"]}),

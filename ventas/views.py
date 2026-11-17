@@ -5,6 +5,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
+from django.core.validators import validate_email
 from django.db.models import Count, Sum
 from django.http import JsonResponse
 from django.db.models import Q
@@ -19,6 +20,7 @@ from compras.aplicaciones import buscar, clave_modelo, leer_consulta, selector
 from compras.models import PartidaListaProveedor
 
 from . import clientes as cli
+from . import compartir
 from . import mostrador as m
 from . import nip as nips
 from . import remisiones as rem
@@ -162,6 +164,9 @@ def mostrador(request):
                              "precio_txt": pesos(_decimal(g.get("precio", ""))),
                              "resultados": m.buscar_codigo(texto, ticket.cliente.lista_precio)[0]}
     ctx["enfocar_codigo"] = request.session.pop("enfocar_codigo", False) or bool(g.get("codigo"))
+    # venta nueva (ticket vacío, sin cliente ni vehículo): se empieza por el cliente
+    ctx["enfocar_cliente"] = (not ctx["enfocar_codigo"] and not lineas and ctx["paso"] == "marca"
+                              and ticket.cliente.pk == ctx["publico"].pk and "cliente_nuevo" not in request.session)
     ctx["recien"] = request.session.pop("recien", [])
     ctx["recien_tipo"] = request.session.pop("recien_tipo", "Agregado")
     ctx["agregado"] = request.session.pop("agregado", None)
@@ -421,6 +426,8 @@ def cliente(request):
         m.Ticket(request.session).elegir_cliente(int(request.POST["cliente"]))
     except (KeyError, ValueError, Cliente.DoesNotExist):
         messages.error(request, "Cliente inválido.")
+    else:
+        request.session["enfocar_codigo"] = True  # ya con cliente, a capturar piezas
     return _volver(request)
 
 
@@ -448,8 +455,9 @@ def cliente_nuevo(request):
     """Alta rápida desde el ticket: nombre, teléfono, RFC (el genérico si no da), dirección y lista. El crédito
     solo lo da el administrador. Si ya existe uno con ese nombre se elige ese en vez de duplicarlo."""
     p = request.POST
-    datos = {k: " ".join((p.get(k) or "").split()) for k in ("nombre", "telefono", "rfc", "lista", "dias", "limite")
+    datos = {k: " ".join((p.get(k) or "").split()) for k in ("nombre", "telefono", "correo", "rfc", "lista", "dias", "limite")
              + DIRECCION}
+    datos["correo"] = datos["correo"].replace(" ", "").lower()
     datos["rfc"] = datos["rfc"].upper().replace(" ", "") or RFC_GENERICO
     ticket = m.Ticket(request.session)
 
@@ -466,13 +474,18 @@ def cliente_nuevo(request):
         return error(f"{e.messages[0]} Si no lo da, deja el genérico.")
     if datos["codigo_postal"] and not (len(datos["codigo_postal"]) == 5 and datos["codigo_postal"].isdigit()):
         return error("El código postal lleva 5 números, o déjalo vacío.")
+    if datos["correo"]:
+        try:
+            validate_email(datos["correo"])
+        except ValidationError:
+            return error("Revisa el correo (algo como nombre@gmail.com), o déjalo vacío.")
     existente, por = cli.duplicado(datos["nombre"], datos["telefono"], datos["rfc"])
     if existente:  # no dar de alta dos veces al mismo cliente
         otro = "" if por == "ese nombre" else " Si es otro cliente, dalo de alta con otro dato."
         messages.info(request, f"{existente} ({existente.folio}) ya estaba dado de alta con {por}; lo dejé elegido.{otro}")
         return _elegido_en(request, ticket, existente)
     lista = ListaPrecio.objects.filter(pk=datos["lista"]).first() if datos["lista"].isdigit() else None
-    nuevo = Cliente(nombre=datos["nombre"][:150], telefono=datos["telefono"][:20], rfc=datos["rfc"],
+    nuevo = Cliente(nombre=datos["nombre"][:150], telefono=datos["telefono"][:20], correo=datos["correo"][:254], rfc=datos["rfc"],
                     lista_precio=lista or m.cliente_mostrador().lista_precio,
                     **{k: datos[k][:Cliente._meta.get_field(k).max_length] for k in DIRECCION})
     dias, limite = _decimal(datos["dias"] or 0), _decimal(datos["limite"] or 0)
@@ -500,6 +513,7 @@ def _elegido_en(request, ticket, cliente):
             destino = reverse("remision_nueva")
         return redirect(_con(_sin(destino, "cliente"), cliente=cliente.pk))
     ticket.elegir_cliente(cliente.pk)
+    request.session["enfocar_codigo"] = True
     return _volver(request)
 
 
@@ -571,7 +585,8 @@ def cotizar(request):
     except ValidationError as e:
         messages.error(request, " ".join(e.messages))
         return _volver(request)
-    return redirect(reverse("cotizacion", args=[g.folio]) + "?imprimir=1")
+    luego = "?enviar=1#enviar" if request.POST.get("luego") == "enviar" else "?imprimir=1"
+    return redirect(reverse("cotizacion", args=[g.folio]) + luego)
 
 
 @login_required
@@ -610,20 +625,52 @@ def _detalle(g):
             for d in g.detalle]
 
 
+def _cotizacion_ctx(request, g, formato=None):
+    from django.conf import settings
+
+    lineas = _detalle(g)
+    return {"g": g, "formato": formato or ("ticket" if request.GET.get("formato") == "ticket" else "carta"),
+            "imprimir": request.GET.get("imprimir") == "1", "lineas": lineas,
+            "hay_pedido": any(d["pedido"] for d in lineas), "subtotal": g.total / m.IVA, "iva": g.total - g.total / m.IVA,
+            "vigente": timezone.localdate() <= g.vence, "dias": settings.COTIZACION_VIGENCIA_DIAS,
+            "rfc": settings.NEGOCIO_RFC, "direccion": settings.NEGOCIO_DIRECCION, "telefono": settings.NEGOCIO_TELEFONO}
+
+
 @login_required
 def cotizacion(request, folio):
-    """Cotización para imprimir, en hoja carta o ticket de 80 mm, con su vigencia."""
+    """Cotización para imprimir, en hoja carta o ticket de 80 mm, con su vigencia, o para mandarla al cliente por
+    WhatsApp o correo con un enlace que abre sin entrar al sistema."""
     from django.conf import settings
 
     g = get_object_or_404(TicketGuardado.objects.select_related("cliente", "usuario"), folio=folio,
                           tipo=TicketGuardado.Tipo.COTIZACION)
-    lineas = _detalle(g)
-    ctx = {"g": g, "formato": "ticket" if request.GET.get("formato") == "ticket" else "carta",
-           "imprimir": request.GET.get("imprimir") == "1", "lineas": lineas,
-           "hay_pedido": any(d["pedido"] for d in lineas), "subtotal": g.total / m.IVA, "iva": g.total - g.total / m.IVA,
-           "vigente": timezone.localdate() <= g.vence, "dias": settings.COTIZACION_VIGENCIA_DIAS,
-           "rfc": settings.NEGOCIO_RFC, "direccion": settings.NEGOCIO_DIRECCION, "telefono": settings.NEGOCIO_TELEFONO}
+    ctx = _cotizacion_ctx(request, g)
+    enlace = request.build_absolute_uri(reverse("cotizacion_publica", args=[compartir.token(g)]))
+    negocio = settings.NEGOCIO_NOMBRE
+    texto_wa = compartir.mensaje(g, ctx["lineas"], enlace, negocio)
+    texto_correo = compartir.mensaje(g, ctx["lineas"], enlace, negocio, negritas=False)
+    asunto = f"Cotización {g.folio} · {negocio}"
+    telefono = g.cliente.telefono if g.cliente_id else ""
+    correo = g.cliente.correo if g.cliente_id else ""
+    ctx["envio"] = {
+        "enlace": enlace, "texto_wa": texto_wa, "texto_correo": texto_correo, "asunto": asunto,
+        "telefono": telefono, "correo": correo, "abrir": request.GET.get("enviar") == "1", "dias": compartir.ENLACE_DIAS,
+        "whatsapp": compartir.enlace_whatsapp(telefono, texto_wa) if compartir.whatsapp(telefono) or not telefono else "",
+        "mailto": compartir.enlace_correo(correo, asunto, texto_correo),
+    }
     return render(request, "ventas/cotizacion.html", ctx)
+
+
+def cotizacion_publica(request, token):
+    """Lo que ve el cliente al abrir el enlace que le llegó por WhatsApp o correo: la cotización, sin entrar al
+    sistema y sin nada más del negocio. Un enlace alterado o de hace más de ENLACE_DIAS no abre nada."""
+    g = compartir.cotizacion_de(token)
+    if g is None:
+        return render(request, "ventas/cotizacion_enlace_vencido.html", {"dias": compartir.ENLACE_DIAS}, status=404)
+    respuesta = render(request, "ventas/cotizacion.html", {**_cotizacion_ctx(request, g, formato="carta"), "publica": True})
+    respuesta["X-Robots-Tag"] = "noindex, nofollow"
+    respuesta["Referrer-Policy"] = "no-referrer"
+    return respuesta
 
 
 @login_required

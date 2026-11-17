@@ -250,34 +250,21 @@ const verReciente = () => {
 };
 verReciente();
 
-// El ticket se queda fijo al bajar por la hoja de piezas solo mientras cabe en la pantalla. Si crece más
-// (p. ej. con el alta de cliente abierta) se suelta en el mismo lugar, para que la página se mueva hasta
-// el campo con el foco en vez de dejarlo abajo, fuera de la vista.
+// Junto a la hoja de piezas el ticket se queda fijo y mide como mucho lo que hay entre la barra de arriba y la de
+// cobro; lo que no cabe se desplaza dentro de sus renglones. Antes, si crecía más, se soltaba y la página
+// brincaba hasta arriba de la hoja al elegir una pieza.
 const vigilarTicket = (() => {
-  let visto = null;
   const ajustar = () => {
     const t = document.querySelector(".ticket");
     if (!t) return;
-    const antes = t.getBoundingClientRect().top, suelto = t.classList.contains("ticket-suelto");
-    t.classList.remove("ticket-suelto");
+    t.style.maxHeight = "";
     if (getComputedStyle(t).position !== "sticky") return;
     const cobro = document.querySelector(".barra-cobro");
-    const libre = (cobro ? cobro.getBoundingClientRect().top : window.innerHeight) - parseFloat(getComputedStyle(t).top) - 12;
-    const soltar = t.offsetHeight > libre;
-    t.classList.toggle("ticket-suelto", soltar);
-    if (soltar && !suelto) window.scrollBy(0, t.getBoundingClientRect().top - antes); // que no brinque
+    const abajo = cobro ? cobro.getBoundingClientRect().top : window.innerHeight;
+    t.style.maxHeight = Math.max(240, abajo - parseFloat(getComputedStyle(t).top) - 12) + "px";
   };
-  const observador = window.ResizeObserver ? new ResizeObserver(() => ajustar()) : null;
   window.addEventListener("resize", ajustar);
-  return () => {
-    const t = document.querySelector(".ticket");
-    if (observador && t !== visto) {
-      if (visto) observador.unobserve(visto);
-      if (t) observador.observe(t);
-      visto = t;
-    }
-    ajustar();
-  };
+  return ajustar;
 })();
 vigilarTicket();
 
