@@ -9,7 +9,7 @@
     <b>{{ total|pesos }}</b>
     <small>IVA incluido {{ iva|pesos }}</small>
   </div>
-  <form method="post" action="{% url 'ticket_cobrar' %}" class="cobro-accion" id="cobro-form" data-enter="normal" data-nip="vendedor" data-nip-para="Cobrar {{ total|pesos }}" data-total="{{ total|stringformat:'.2f' }}">{% csrf_token %}
+  <form method="post" action="{% url 'ticket_cobrar' %}" class="cobro-accion" id="cobro-form" data-enter="normal" data-nip="vendedor" data-nip-para="Cobrar {{ total|pesos }}"{% if cliente_vencido %} data-nip-admin-si="forma_pago:CREDITO" data-nip-admin-para="Debe {{ cliente_vencido|pesos }} vencido: a crédito lo autoriza un administrador"{% endif %} data-total="{{ total|stringformat:'.2f' }}">{% csrf_token %}
     <input type="hidden" name="next" value="{{ aqui }}">
     {% for k, v in base.items %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
     <fieldset class="pagos">

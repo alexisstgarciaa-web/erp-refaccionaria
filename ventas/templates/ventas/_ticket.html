@@ -23,7 +23,7 @@
     </div>
     <p class="ticket-cliente-actual"><b>{{ cliente }}</b> <span class="mono">{{ cliente.folio }}</span>{% if cliente.dias_credito %}
       <span class="ticket-cliente-credito">Crédito {{ cliente.dias_credito }} días · disponible {{ cliente_disponible|pesos }}</span>{% endif %}</p>
-    {% if cliente_vencido %}<p class="ticket-cliente-vencido">Debe {{ cliente_vencido|pesos }} vencido</p>{% endif %}
+    {% if cliente_vencido %}<p class="ticket-cliente-vencido">Debe {{ cliente_vencido|pesos }} vencido · a crédito pide NIP de administrador</p>{% endif %}
     <form method="post" action="{% url 'ticket_cliente' %}" class="cliente-buscar" data-enter="normal">{% csrf_token %}
       <input type="hidden" name="next" value="{{ aqui }}">
       <input type="hidden" name="cliente" value="{{ cliente.pk }}">

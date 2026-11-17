@@ -152,3 +152,56 @@ class SinDuplicadosTests(Base):
         with self.assertRaisesMessage(ValidationError, "Ese RFC ya es de Taller Ramírez"):
             otro.full_clean()
         Cliente(nombre="Sin RFC", lista_precio=self.mostrador).full_clean()  # el genérico se puede repetir
+
+
+class CreditoConVencidoTests(Base):
+    """Decidido por Alexis: con algo vencido se avisa y venderle a crédito pide NIP de administrador."""
+
+    def setUp(self):
+        super().setUp()
+        nips.asignar(self.user, "4821")
+        self.admin = get_user_model().objects.create_user("alexis", is_staff=True)
+        nips.asignar(self.admin, "7305")
+        self.client.force_login(self.user)
+        v = registrar_venta(self.turno, self.taller, [{"producto": self.filtro, "cantidad": 1}], FormaPago.CREDITO)  # 107
+        Venta.objects.filter(pk=v.pk).update(vence=timezone.localdate() - timedelta(days=5))
+        self.client.post(reverse("ticket_cliente"), {"cliente": self.taller.pk})
+
+    def cobrar(self, forma, nip):
+        self.client.post(reverse("ticket_agregar"), {"clave": f"producto:{self.filtro.pk}", "pos": "aceite"})
+        return self.client.post(reverse("ticket_cobrar"), {"forma_pago": forma, "nip": nip}, follow=True)
+
+    def test_mostrador(self):
+        r = self.client.get(reverse("mostrador"))
+        self.assertContains(r, "Debe $107 vencido · a crédito pide NIP de administrador")
+        self.assertContains(r, 'data-nip-admin-si="forma_pago:CREDITO"')
+        r = self.cobrar(FormaPago.CREDITO, "4821")
+        self.assertContains(r, "Ese NIP no es de administrador")
+        self.assertEqual(Venta.objects.count(), 1)
+        r = self.cobrar(FormaPago.CREDITO, "7305")
+        self.assertContains(r, "Crédito autorizado por alexis aunque debía $107 vencido")
+        self.assertEqual(Venta.objects.filter(estado=Venta.Estado.CREDITO).count(), 2)
+        # de contado sigue con el NIP de quien cobra
+        self.client.post(reverse("ticket_cliente"), {"cliente": self.taller.pk})
+        r = self.cobrar(FormaPago.EFECTIVO, "4821")
+        self.assertEqual(Venta.objects.filter(forma_pago=FormaPago.EFECTIVO).count(), 1)
+
+    def test_sin_vencido_no_pide_administrador(self):
+        Venta.objects.update(vence=timezone.localdate() + timedelta(days=5))
+        self.assertNotContains(self.client.get(reverse("mostrador")), "data-nip-admin-si")
+        self.cobrar(FormaPago.CREDITO, "4821")
+        self.assertEqual(Venta.objects.filter(estado=Venta.Estado.CREDITO).count(), 2)
+
+    def test_remision(self):
+        datos = {"cliente": self.taller.pk, "condiciones": "CREDITO", "accion": "emitir", "nip": "4821",
+                 "clave": [f"producto:{self.filtro.pk}", ""], "codigo": ["GP-37", ""], "cantidad": ["1", ""],
+                 "precio": ["", ""], "descuento": ["", ""], "descripcion": ["", ""], "existencia": ["", ""]}
+        pagina = self.client.get(reverse("remision_nueva"), {"cliente": self.taller.pk})
+        self.assertContains(pagina, 'data-nip-admin-si="condiciones:CREDITO"')
+        r = self.client.post(reverse("remision_nueva"), datos)
+        self.assertContains(r, "Ese NIP no es de administrador", status_code=400)
+        r = self.client.post(reverse("remision_nueva"), {**datos, "nip": "7305"}, follow=True)
+        self.assertContains(r, "Crédito autorizado por alexis aunque debía $107 vencido")
+        # de contado, con el NIP de quien la hace
+        r = self.client.post(reverse("remision_nueva"), {**datos, "condiciones": "CONTADO"})
+        self.assertEqual(Venta.objects.filter(estado=Venta.Estado.POR_COBRAR).count(), 1)

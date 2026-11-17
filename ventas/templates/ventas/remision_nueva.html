@@ -25,7 +25,7 @@
     <p>RFC {{ c.rfc }}{% if c.telefono %} · Tel. {{ c.telefono }}{% endif %} · lista {{ c.lista }}</p>
     {% for renglon in c.domicilio %}<p class="tenue">{{ renglon }}</p>{% empty %}<p class="tenue">Sin dirección</p>{% endfor %}
     <p class="rn-credito">{% if c.dias_credito %}Crédito {{ c.dias_credito }} días · límite {{ c.limite }} · debe {{ c.saldo }} · <b>disponible {{ c.disponible_txt }}</b>{% else %}Solo contado{% endif %}</p>
-    {% if c.vencido_txt %}<p class="rn-vencido">Debe {{ c.vencido_txt }} vencido</p>{% endif %}
+    {% if c.vencido_txt %}<p class="rn-vencido">Debe {{ c.vencido_txt }} vencido · a crédito pide NIP de administrador</p>{% endif %}
     {% endwith %}{% endif %}
   </div>
   <div class="rem-cliente-nuevo">
@@ -35,7 +35,7 @@
   </div>
 </section>
 
-<form method="post" class="remision-form" id="remision-form" data-nip="vendedor" data-nip-para="Emitir la remisión"
+<form method="post" class="remision-form" id="remision-form" data-nip="vendedor" data-nip-para="Emitir la remisión"{% if cliente_actual.vencido_txt %} data-nip-admin-si="condiciones:CREDITO" data-nip-admin-para="Debe {{ cliente_actual.vencido_txt }} vencido: a crédito lo autoriza un administrador"{% endif %}
       data-precios="{% url 'remision_precios' %}" data-sugerir="{% url 'ticket_sugerir' %}">{% csrf_token %}
   <input type="hidden" name="cliente" id="rem-cliente" value="{{ cliente_actual.pk|default:'' }}"
          data-dias="{{ cliente_actual.dias_credito|default:0 }}" data-disponible="{{ cliente_actual.disponible|default:0 }}">

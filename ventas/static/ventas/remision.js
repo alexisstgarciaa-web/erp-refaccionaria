@@ -21,7 +21,7 @@
       nodo("p", "", `RFC ${c.rfc}${c.telefono ? " · Tel. " + c.telefono : ""} · lista ${c.lista}`),
       ...(c.domicilio.length ? c.domicilio.map((d) => nodo("p", "tenue", d)) : [nodo("p", "tenue", "Sin dirección")]),
       nodo("p", "rn-credito", c.dias_credito ? `Crédito ${c.dias_credito} días · límite ${c.limite} · debe ${c.saldo} · disponible ${c.disponible_txt}` : "Solo contado"),
-      ...(c.vencido_txt ? [nodo("p", "rn-vencido", `Debe ${c.vencido_txt} vencido`)] : []),
+      ...(c.vencido_txt ? [nodo("p", "rn-vencido", `Debe ${c.vencido_txt} vencido · a crédito pide NIP de administrador`)] : []),
     );
     ficha.hidden = false;
   };
@@ -32,6 +32,14 @@
     clienteId.dataset.dias = c.dias_credito;
     clienteId.dataset.disponible = c.disponible;
     pintarFicha(c);
+    // a crédito, si debe algo vencido, el NIP es de administrador
+    if (c.vencido_txt) {
+      form.dataset.nipAdminSi = "condiciones:CREDITO";
+      form.dataset.nipAdminPara = `Debe ${c.vencido_txt} vencido: a crédito lo autoriza un administrador`;
+    } else {
+      delete form.dataset.nipAdminSi;
+      delete form.dataset.nipAdminPara;
+    }
     const credito = form.querySelector('input[name=condiciones][value=CREDITO]');
     credito.disabled = !c.dias_credito;
     if (!c.dias_credito) form.querySelector('input[name=condiciones][value=CONTADO]').checked = true;

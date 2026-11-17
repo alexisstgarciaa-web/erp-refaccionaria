@@ -510,12 +510,14 @@ def cobrar(request):
     if not turno:
         messages.error(request, "Abre la caja antes de cobrar.")
         return redirect("caja")
-    vendedor = _autoriza(request)
+    ticket = m.Ticket(request.session)
+    forma = request.POST.get("forma_pago", FormaPago.EFECTIVO)
+    # a crédito, a quien debe algo vencido, lo autoriza un administrador
+    vencido = cli.vencido(ticket.cliente) if forma == FormaPago.CREDITO else 0
+    vendedor = _autoriza(request, admin=bool(vencido))
     if not vendedor:
         return _volver(request)
-    ticket = m.Ticket(request.session)
     veh, _ = _vehiculo_post(request.POST)
-    forma = request.POST.get("forma_pago", FormaPago.EFECTIVO)
     # efectivo: con cuánto paga, para dar el cambio (opcional)
     paga_con = _decimal(request.POST.get("paga_con")) if forma == FormaPago.EFECTIVO else None
     if paga_con is not None:
@@ -534,6 +536,8 @@ def cobrar(request):
         if paga_con is not None:
             request.session["ultimo_pago"] = {"recibio": pesos(paga_con), "cambio": pesos(paga_con - venta.total)}
         partes.append(f"Venta {venta.folio} por {pesos(venta.total)} con {venta.get_forma_pago_display().lower()}.")
+        if vencido:
+            partes.append(f"Crédito autorizado por {vendedor.get_short_name() or vendedor.get_username()} aunque debía {pesos(vencido)} vencido.")
     for oc in ordenes:
         partes.append(f"Quedó pedido a {oc.proveedor} en {oc.folio} (borrador, compra de emergencia).")
     if ordenes:
@@ -1015,7 +1019,9 @@ def remision_nueva(request, pk=None):
                 if datos["condiciones"] == "CREDITO" and cliente.dias_credito <= 0:
                     raise ValidationError(f"{cliente} no tiene crédito autorizado: va de contado.")
                 partidas = rem.partidas(datos["lineas"], cliente, _precio_remision(request, cliente))
-                quien = _autoriza(request)
+                # a crédito, a quien debe algo vencido, lo autoriza un administrador
+                vencido = cli.vencido(cliente) if datos["condiciones"] == "CREDITO" else 0
+                quien = _autoriza(request, admin=bool(vencido))
                 if quien:
                     venta = emitir_remision(cliente, partidas, datos["condiciones"], quien, datos["orden_compra"],
                                             datos["observaciones"], datos["vehiculo"])
@@ -1023,7 +1029,9 @@ def remision_nueva(request, pk=None):
                         borrador.delete()
                     siguiente = ("Ya puedes cobrarla en Caja." if venta.estado == Venta.Estado.POR_COBRAR
                                  else f"Quedó en Por cobrar; vence el {venta.vence:%d/%m/%Y}.")
-                    messages.success(request, f"Remisión {venta.folio} por {pesos(venta.total)} para {cliente}. {siguiente}")
+                    autorizo = (f" Crédito autorizado por {quien.get_short_name() or quien.get_username()} aunque debía "
+                                f"{pesos(vencido)} vencido.") if vencido else ""
+                    messages.success(request, f"Remisión {venta.folio} por {pesos(venta.total)} para {cliente}. {siguiente}{autorizo}")
                     return redirect("venta", venta.folio)
             except (ValidationError, ObjectDoesNotExist) as e:
                 messages.error(request, " ".join(getattr(e, "messages", [str(e)])))

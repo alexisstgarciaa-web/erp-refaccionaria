@@ -1,7 +1,8 @@
 // NIP: los formularios con data-nip piden el NIP en un cuadro antes de mandarse.
 // data-nip="vendedor" (quien lo hace) o "admin" (lo autoriza un administrador); data-nip-para dice qué se
 // autoriza; data-nip-cuando="campo" lo pide solo si ese campo trae un número mayor que cero. Un botón con
-// data-sin-nip manda el formulario sin pedirlo.
+// data-sin-nip manda el formulario sin pedirlo. data-nip-admin-si="campo:VALOR" pide el de administrador
+// cuando ese campo trae ese valor (p. ej. crédito a quien debe algo vencido), con data-nip-admin-para de motivo.
 // Se carga después de mostrador.js: si otra validación ya detuvo el envío (p. ej. «Paga con» no alcanza),
 // no se pide el NIP. El servidor siempre vuelve a revisarlo.
 (() => {
@@ -11,6 +12,13 @@
         para = dlg.querySelector("#nip-para"), ayuda = dlg.querySelector("#nip-ayuda");
   let pendiente = null;
 
+  const pideAdmin = (f) => {
+    if (f.dataset.nip === "admin") return true;
+    const [nombre, valor] = (f.dataset.nipAdminSi || "").split(":");
+    if (!nombre) return false;
+    const marcado = f.querySelector(`[name="${CSS.escape(nombre)}"]:checked`) || f.elements[nombre];
+    return !!marcado && marcado.value === valor;
+  };
   const oculto = (f) => {
     let i = f.querySelector('input[type=hidden][name="nip"]');
     if (!i) { i = document.createElement("input"); i.type = "hidden"; i.name = "nip"; f.append(i); }
@@ -28,9 +36,9 @@
     e.stopImmediatePropagation();
     if (dlg.open) return;
     pendiente = { f, boton: e.submitter };
-    const admin = f.dataset.nip === "admin";
+    const admin = pideAdmin(f);
     titulo.textContent = admin ? "NIP de administrador" : "Tu NIP";
-    para.textContent = f.dataset.nipPara || "";
+    para.textContent = [f.dataset.nipPara, admin && f.dataset.nip !== "admin" ? f.dataset.nipAdminPara : ""].filter(Boolean).join(" · ");
     ayuda.textContent = "4 a 6 números · Enter para seguir · Esc para regresar";
     ayuda.classList.remove("error");
     campo.value = "";
