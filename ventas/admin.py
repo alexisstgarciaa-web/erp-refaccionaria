@@ -29,13 +29,16 @@ class ClienteAdmin(ConComas, admin.ModelAdmin):
         return obj.folio
 
     def get_search_results(self, request, queryset, search_term):
-        """«CTE-0012» o «cte12» busca por folio."""
-        from .remisiones import pk_de_folio
+        """«CTE-0012» o «cte12» busca por folio; lo demás también sin acentos ni guiones («ramirez», «442-123»)."""
+        from .clientes import filtro, pk_de_folio
 
         folio = pk_de_folio(search_term)
         if folio is not None:
             return queryset.filter(pk=folio), False
-        return super().get_search_results(request, queryset, search_term)
+        res, duplicados = super().get_search_results(request, queryset, search_term)
+        if search_term.strip():
+            res = res | queryset.filter(filtro(search_term))
+        return res, duplicados
 
     def formfield_for_dbfield(self, db_field, request, **kwargs):
         campo = super().formfield_for_dbfield(db_field, request, **kwargs)

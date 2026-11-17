@@ -1,55 +1,15 @@
-"""Remisiones › Nueva: buscar al cliente por folio, celular o nombre, y leer las partidas del formulario."""
+"""Remisiones › Nueva: leer las partidas del formulario (al cliente lo busca ventas/clientes.py)."""
 
-import re
 from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ValidationError
-from django.db.models import Q
 
 from catalogo.models import Producto
 
 from . import mostrador as m
-from .models import Cliente
-from .templatetags.erp import cant, miles, pesos
+from .templatetags.erp import cant, miles
 
 CAMPOS_LINEA = ("clave", "codigo", "descripcion", "existencia", "cantidad", "precio", "descuento")
-
-
-def _digitos(texto):
-    return re.sub(r"\D", "", texto or "")
-
-
-def pk_de_folio(texto):
-    """«CTE-0012», «cte12» o «C-12» → 12; None si no es un folio de cliente."""
-    folio = re.fullmatch(r"(?i)\s*c(?:te)?[-\s]*0*(\d{1,6})\s*", texto or "")
-    return int(folio.group(1)) if folio else None
-
-
-def buscar_clientes(texto, limite=8):
-    """«CTE-0012», «cte12» o «12» buscan por folio; 7 números o más, por celular (aunque esté escrito con
-    espacios o guiones); lo demás por nombre o RFC. Solo clientes activos."""
-    t = (texto or "").strip()
-    if not t:
-        return []
-    activos = Cliente.objects.filter(activo=True).select_related("lista_precio")
-    folio = pk_de_folio(t)
-    if folio is not None:
-        return list(activos.filter(pk=folio))
-    digitos = _digitos(t)
-    if digitos and len(digitos) >= len(t.replace(" ", "").replace("-", "")) - 1:  # casi puros números
-        res = list(activos.filter(pk=int(digitos))) if len(digitos) <= 6 else []
-        if len(digitos) >= 4:  # el celular se guarda como lo tecleen: se compara solo con sus números
-            res += [c for c in activos.exclude(telefono="") if digitos in _digitos(c.telefono) and c not in res]
-        return res[:limite]
-    return list(activos.filter(Q(nombre__icontains=t) | Q(rfc__icontains=t)).order_by("nombre")[:limite])
-
-
-def cliente_json(c):
-    disponible = c.limite_credito - c.saldo() if c.dias_credito else Decimal(0)
-    return {"pk": c.pk, "folio": c.folio, "nombre": c.nombre, "telefono": c.telefono, "rfc": c.rfc,
-            "rfc_generico": c.rfc_generico, "domicilio": c.domicilio, "lista": str(c.lista_precio),
-            "dias_credito": c.dias_credito, "limite": pesos(c.limite_credito), "saldo": pesos(c.saldo()),
-            "disponible": str(disponible), "disponible_txt": pesos(disponible)}
 
 
 def leer_lineas(post):

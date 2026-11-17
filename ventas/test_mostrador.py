@@ -331,7 +331,8 @@ class MostradorTests(TestCase):
         self.assertEqual((c.rfc, c.telefono, c.dias_credito, c.lista_precio), ("TARA800101AB1", "4421234567", 0, self.mostrador))
         self.assertEqual(m.Ticket(self.client.session).cliente, c)
         self.assertContains(r, "dado de alta y elegido en el ticket")
-        self.assertContains(r, f'<option value="{c.pk}" selected>{c.folio} · Taller Ramírez</option>', html=True)
+        self.assertContains(r, f'<b>Taller Ramírez</b> <span class="mono">{c.folio}</span>')
+        self.assertContains(r, f'<input type="hidden" name="cliente" value="{c.pk}">', html=True)
         # el formulario pide NIP de administrador solo si le dan crédito
         self.assertContains(r, 'data-nip="admin" data-nip-cuando="dias"')
         # mismo nombre: no se duplica, se elige el que ya está

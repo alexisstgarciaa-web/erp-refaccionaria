@@ -220,9 +220,23 @@ option, optgroup { background: var(--fondo); color: var(--texto); }
 .ticket-cabeza h2 { font-size: 20px; }
 .ticket-cabeza span { font-size: 12px; color: var(--texto-3); font-family: var(--f-mono); }
 .ticket-cliente { margin: 14px 0 6px; }
-.ticket-cliente label { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 600; color: var(--texto-3); text-transform: uppercase; letter-spacing: .06em; }
+.ticket-cliente-cabeza { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+.ticket-cliente-titulo { font-size: 12px; font-weight: 600; color: var(--texto-3); text-transform: uppercase; letter-spacing: .06em; }
 .ticket-cliente small { text-transform: none; letter-spacing: 0; font-weight: 400; }
-.ticket-cliente select { height: 46px; font-size: 15px; }
+.ticket-cliente-publico { margin: 0; }
+.ticket-cliente-publico button { all: unset; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--texto-2);
+  text-decoration: underline; text-underline-offset: 2px; }
+.ticket-cliente-publico button:focus-visible { outline: 2px solid var(--primario); outline-offset: 2px; }
+.ticket-cliente-actual { margin: 0 0 8px; font-size: 16px; line-height: 1.35; }
+.ticket-cliente-actual .mono { margin-left: 4px; font-size: 13px; color: var(--primario); }
+.ticket-cliente-credito { display: block; font-size: 13px; color: var(--texto-2); }
+.ticket-cliente-vencido, .rn-vencido { margin: -4px 0 8px; font-size: 13px; font-weight: 700; color: var(--rojo); }
+.rn-vencido { margin: 4px 0 0; }
+.cliente-buscar { position: relative; }
+.cliente-buscar-campo { height: 44px; font-size: 15px; }
+.cliente-buscar .sugerencias { min-width: 100%; }
+.sug-cliente-dato { font-size: 12px; color: var(--texto-3); white-space: nowrap; }
+.sug-cliente-vencido { font-size: 12px; font-weight: 700; color: var(--rojo); white-space: nowrap; }
 .ticket-vacio { margin: 14px 0 12px; font-size: 14px; color: var(--texto-3); }
 .ticket-pedido { margin: 14px 0 0; padding-top: 12px; border-top: 1px dashed var(--borde); font: 700 12px var(--f-texto);
   letter-spacing: .06em; text-transform: uppercase; color: var(--pedido); }
@@ -837,7 +851,9 @@ a.folio:hover { color: var(--primario); }
 .rem-cliente h2 { grid-column: 1 / -1; }
 .rem-buscar-campo { position: relative; margin-top: 7px; }
 .rem-buscar-campo input { height: 52px; font-size: 17px; }
-.rem-sug-cliente { grid-template-columns: 96px minmax(0, 1fr) auto auto; }
+.sug-cliente { grid-template-columns: 88px minmax(0, 1fr) auto; gap: 12px; }
+.sug-cliente .sugerencia-nombre { white-space: normal; line-height: 1.3; }
+.sug-cliente .sugerencia-nombre small { display: block; font-size: 12px; color: var(--texto-3); }
 .rem-ficha { padding: 12px 16px; background: var(--superficie-2); border-left: 4px solid var(--texto); font-size: 14px; }
 .rem-ficha p { margin: 2px 0; }
 .rem-ficha-nombre { font-size: 17px; }
@@ -900,8 +916,8 @@ a.folio:hover { color: var(--primario); }
   .rem-fila .rem-importe { grid-column: 1 / 3; text-align: left; font-size: 16px; }
   .rem-fila td:last-child { grid-column: 3; justify-self: end; }
   .rem-sugerencias { width: calc(100% - 20px); }
-  .rem-sug-cliente { grid-template-columns: 80px minmax(0, 1fr); }
-  .rem-sug-cliente > :nth-child(n+3) { display: none; }
+  .sug-cliente { grid-template-columns: 80px minmax(0, 1fr) auto; }
+  .sug-cliente .sugerencia-nombre { grid-column: auto; grid-row: auto; }
   .rem-botones { flex-direction: column-reverse; }
   .rem-botones button { width: 100%; }
   .rn-totales dl { min-width: 0; width: 100%; }

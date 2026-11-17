@@ -10,14 +10,30 @@
     </form>
     {% endif %}
   </header>
-  <form method="post" action="{% url 'ticket_cliente' %}" class="ticket-cliente">{% csrf_token %}
-    <input type="hidden" name="next" value="{{ aqui }}">
-    <label for="cliente">Cliente <small>lista {{ cliente.lista_precio }}</small></label>
-    <select id="cliente" name="cliente" onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()">
-      {% for c in clientes %}<option value="{{ c.pk }}"{% if c.pk == cliente.pk %} selected{% endif %}>{{ c.folio }} · {{ c }}{% if c.dias_credito %} · crédito {{ c.dias_credito }} días{% endif %}</option>{% endfor %}
-    </select>
-    <noscript><button class="btn-sec" type="submit">Cambiar</button></noscript>
-  </form>
+  <div class="ticket-cliente">
+    <div class="ticket-cliente-cabeza">
+      <span class="ticket-cliente-titulo">Cliente <small>lista {{ cliente.lista_precio }}</small></span>
+      {% if cliente.pk != publico.pk %}
+      <form method="post" action="{% url 'ticket_cliente' %}" class="ticket-cliente-publico">{% csrf_token %}
+        <input type="hidden" name="next" value="{{ aqui }}">
+        <input type="hidden" name="cliente" value="{{ publico.pk }}">
+        <button type="submit" class="enlace" title="Regresar a Público en general">Público en general</button>
+      </form>
+      {% endif %}
+    </div>
+    <p class="ticket-cliente-actual"><b>{{ cliente }}</b> <span class="mono">{{ cliente.folio }}</span>{% if cliente.dias_credito %}
+      <span class="ticket-cliente-credito">Crédito {{ cliente.dias_credito }} días · disponible {{ cliente_disponible|pesos }}</span>{% endif %}</p>
+    {% if cliente_vencido %}<p class="ticket-cliente-vencido">Debe {{ cliente_vencido|pesos }} vencido</p>{% endif %}
+    <form method="post" action="{% url 'ticket_cliente' %}" class="cliente-buscar" data-enter="normal">{% csrf_token %}
+      <input type="hidden" name="next" value="{{ aqui }}">
+      <input type="hidden" name="cliente" value="{{ cliente.pk }}">
+      <label class="sr" for="cliente-q">Cambiar de cliente</label>
+      <input id="cliente-q" class="cliente-buscar-campo" data-clientes="{% url 'clientes_buscar' %}" data-elegir="enviar"
+             role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="cliente-sugerencias"
+             autocomplete="off" spellcheck="false" placeholder="Cambiar: folio, celular o nombre · F4">
+      <div class="sugerencias" id="cliente-sugerencias" role="listbox" aria-label="Clientes" hidden></div>
+    </form>
+  </div>
   {% include "ventas/_cliente_nuevo.html" %}
 
   {% if en_espera %}

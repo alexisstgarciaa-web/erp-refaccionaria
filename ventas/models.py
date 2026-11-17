@@ -1,6 +1,9 @@
+import re
+import unicodedata
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
 from django.db import models
 from django.db.models import Sum
@@ -21,6 +24,17 @@ rfc_valido = RegexValidator(r"^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$",
 cp_valido = RegexValidator(r"^\d{5}$", "El código postal lleva 5 números.")
 
 
+def texto_busqueda(*partes):
+    """Minúsculas, sin acentos ni signos, para buscar como sea que se teclee: «Taller Ramírez, S.A.» → «taller ramirez s a»."""
+    t = unicodedata.normalize("NFKD", " ".join(p or "" for p in partes).casefold())
+    t = "".join(c for c in t if not unicodedata.combining(c))
+    return " ".join(re.sub(r"[^0-9a-z&]+", " ", t).split())
+
+
+def solo_digitos(texto):
+    return re.sub(r"\D", "", texto or "")
+
+
 class Cliente(models.Model):
     nombre = models.CharField(max_length=150)
     rfc = models.CharField("RFC", max_length=13, default=RFC_GENERICO, validators=[rfc_valido],
@@ -38,6 +52,8 @@ class Cliente(models.Model):
     dias_credito = models.PositiveSmallIntegerField(default=0, help_text="0 = solo contado")
     limite_credito = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     activo = models.BooleanField(default=True)
+    busqueda = models.CharField(max_length=300, blank=True, editable=False,
+                                help_text="Nombre, RFC y teléfono sin acentos ni signos, para el buscador")
 
     class Meta:
         ordering = ["nombre"]
@@ -52,7 +68,19 @@ class Cliente(models.Model):
 
     def save(self, *args, **kwargs):
         self.rfc = "".join((self.rfc or "").upper().split()) or RFC_GENERICO
+        self.busqueda = f"{texto_busqueda(self.nombre, self.rfc)} {solo_digitos(self.telefono)}".strip()[:300]
+        campos = kwargs.get("update_fields")
+        if campos is not None and {"nombre", "rfc", "telefono"} & set(campos):
+            kwargs["update_fields"] = {*campos, "busqueda"}
         super().save(*args, **kwargs)
+
+    def clean(self):
+        super().clean()
+        rfc = "".join((self.rfc or "").upper().split())
+        if rfc and rfc != RFC_GENERICO:
+            otro = Cliente.objects.filter(rfc=rfc, activo=True).exclude(pk=self.pk).first()
+            if otro:
+                raise ValidationError({"rfc": f"Ese RFC ya es de {otro} ({otro.folio})."})
 
     @property
     def rfc_generico(self):

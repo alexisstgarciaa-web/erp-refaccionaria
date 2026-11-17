@@ -18,6 +18,7 @@ from catalogo.models import ListaPrecio
 from compras.aplicaciones import buscar, clave_modelo, leer_consulta, selector
 from compras.models import PartidaListaProveedor
 
+from . import clientes as cli
 from . import mostrador as m
 from . import nip as nips
 from . import remisiones as rem
@@ -133,7 +134,7 @@ def mostrador(request):
     ticket = m.Ticket(request.session)
     sel, listas = _elegido(g)
     ctx = {"ticket": ticket, "turno": _turno(request.user), "sel": sel, "listas": listas,
-           "clientes": Cliente.objects.filter(activo=True), "cliente": ticket.cliente,
+           "cliente": ticket.cliente, "publico": m.cliente_mostrador(),
            "marcas_comunes": listas["marcas"][:8],
            "marcas": sorted(listas["marcas"], key=lambda x: x[0].lower())}
     if sel["modelo"] and sel["litros"]:
@@ -152,6 +153,8 @@ def mostrador(request):
     ctx["pedido_total"] = sum((ln.importe for ln in lineas if ln.sobre_pedido), Decimal(0))
     ctx["pedido_n"] = sum(1 for ln in lineas if ln.sobre_pedido)
     ctx["pagos"] = [fp for fp in FormaPago if fp != FormaPago.CREDITO or ticket.cliente.dias_credito > 0]
+    if ticket.cliente.dias_credito:
+        ctx["cliente_saldo"], ctx["cliente_disponible"], ctx["cliente_vencido"] = cli.credito(ticket.cliente)
     ctx["aqui"] = _sin(request.get_full_path(), "codigo", "cantidad", "precio")
     if g.get("codigo"):
         texto, cuantas = m.leer_captura(g["codigo"], g.get("cantidad"))
@@ -463,9 +466,10 @@ def cliente_nuevo(request):
         return error(f"{e.messages[0]} Si no lo da, deja el genérico.")
     if datos["codigo_postal"] and not (len(datos["codigo_postal"]) == 5 and datos["codigo_postal"].isdigit()):
         return error("El código postal lleva 5 números, o déjalo vacío.")
-    existente = Cliente.objects.filter(nombre__iexact=datos["nombre"], activo=True).first()
-    if existente:
-        messages.info(request, f"{existente} ({existente.folio}) ya estaba dado de alta; lo dejé elegido.")
+    existente, por = cli.duplicado(datos["nombre"], datos["telefono"], datos["rfc"])
+    if existente:  # no dar de alta dos veces al mismo cliente
+        otro = "" if por == "ese nombre" else " Si es otro cliente, dalo de alta con otro dato."
+        messages.info(request, f"{existente} ({existente.folio}) ya estaba dado de alta con {por}; lo dejé elegido.{otro}")
         return _elegido_en(request, ticket, existente)
     lista = ListaPrecio.objects.filter(pk=datos["lista"]).first() if datos["lista"].isdigit() else None
     nuevo = Cliente(nombre=datos["nombre"][:150], telefono=datos["telefono"][:20], rfc=datos["rfc"],
@@ -623,7 +627,7 @@ def cotizaciones(request):
     q = (request.GET.get("q") or "").strip()
     cots = TicketGuardado.objects.filter(tipo=TicketGuardado.Tipo.COTIZACION).select_related("cliente")
     if q:
-        cots = cots.filter(Q(folio__icontains=q) | Q(cliente__nombre__icontains=q) | Q(nombre__icontains=q))
+        cots = cots.filter(Q(folio__icontains=q) | cli.coincide(q) | Q(nombre__icontains=q))
     return render(request, "ventas/cotizaciones.html", {
         "cotizaciones": cots[:60], "q": q, "turno": _turno(request.user), "hoy": timezone.localdate(), **_pestanas()})
 
@@ -655,7 +659,7 @@ def pedidos(request):
     qs = PedidoCliente.objects.select_related("cliente", "producto", "linea_oc__orden__proveedor", "venta", "venta_entrega")
     qs = qs.exclude(estado=PedidoCliente.Estado.PEDIDO).order_by("-cerrado") if cerrados else qs.filter(estado=PedidoCliente.Estado.PEDIDO)
     if q:
-        qs = qs.filter(Q(cliente__nombre__icontains=q) | Q(codigo__icontains=q) | Q(contacto__icontains=q)
+        qs = qs.filter(cli.coincide(q) | Q(codigo__icontains=q) | Q(contacto__icontains=q)
                        | Q(descripcion__icontains=q))
     hoy = timezone.localdate()
     filas = [{"p": p, "situacion": _situacion(p), "dias": (hoy - timezone.localtime(p.fecha).date()).days} for p in qs[:100]]
@@ -778,8 +782,7 @@ def remisiones(request):
     if por_cobrar:
         ventas = ventas.filter(estado__in=[Venta.Estado.CREDITO, Venta.Estado.POR_COBRAR]).order_by("vence", "fecha")
     if q:
-        cte = rem.pk_de_folio(q)
-        ventas = ventas.filter(cliente_id=cte) if cte is not None else ventas.filter(Q(folio__icontains=q) | Q(cliente__nombre__icontains=q))
+        ventas = ventas.filter(Q(folio__icontains=q) | cli.coincide(q))
     ctx = {"ventas": ventas[:60], "q": q, "por_cobrar": por_cobrar, "turno": _turno(request.user),
            "hoy": timezone.localdate(), **_pestanas()}
     return render(request, "ventas/remisiones.html", ctx)
@@ -884,7 +887,7 @@ def devoluciones(request):
     if por_reclamar:
         qs = qs.filter(tipo=Devolucion.Tipo.GARANTIA, reclamo__in=[Devolucion.Reclamo.PENDIENTE, Devolucion.Reclamo.RECLAMADA])
     if q:
-        qs = qs.filter(Q(folio__icontains=q) | Q(venta__folio__icontains=q) | Q(venta__cliente__nombre__icontains=q)
+        qs = qs.filter(Q(folio__icontains=q) | Q(venta__folio__icontains=q) | cli.coincide(q, "venta__cliente")
                        | Q(lineas__venta_linea__producto__sku__icontains=q)).distinct()
     return render(request, "ventas/devoluciones.html", {
         "devoluciones": qs[:60], "q": q, "por_reclamar": por_reclamar, "turno": _turno(request.user),
@@ -935,7 +938,10 @@ def venta_cancelar(request, folio):
 @login_required
 def clientes_buscar(request):
     """Clientes por folio (CTE-0012), celular o nombre, para elegirlo en la remisión."""
-    return JsonResponse({"clientes": [rem.cliente_json(c) for c in rem.buscar_clientes(request.GET.get("q", ""))]})
+    q = request.GET.get("q", "").strip()
+    if not q:  # campo vacío: los últimos clientes atendidos
+        return JsonResponse({"clientes": [], "recientes": [cli.cliente_json(c) for c in cli.recientes(sin=m.cliente_mostrador().pk)]})
+    return JsonResponse({"clientes": [cli.cliente_json(c) for c in cli.buscar_clientes(q)]})
 
 
 @login_required
@@ -1030,7 +1036,7 @@ def remision_nueva(request, pk=None):
             messages.success(request, f"Borrador {borrador.pk} guardado. Lo sigues desde Remisiones › Borradores.")
             return redirect("remision_borrador", borrador.pk)
     cliente = datos["cliente"]
-    ctx = {"datos": datos, "borrador": borrador, "cliente_actual": rem.cliente_json(cliente) if cliente else None,
+    ctx = {"datos": datos, "borrador": borrador, "cliente_actual": cli.cliente_json(cliente) if cliente else None,
            "lineas": datos["lineas"] + [dict.fromkeys(rem.CAMPOS_LINEA, "")],  # siempre una fila vacía al final
            "turno": _turno(request.user), "listas_precio": ListaPrecio.objects.order_by("nombre"),
            "cliente_nuevo": request.session.pop("cliente_nuevo", None), "rfc_generico": RFC_GENERICO,

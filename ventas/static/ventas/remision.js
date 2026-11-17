@@ -9,26 +9,24 @@
   const clienteId = document.getElementById("rem-cliente");
 
   // ───────── Cliente ─────────
-  const q = document.getElementById("rem-cliente-q"), cajaClientes = document.getElementById("rem-clientes");
+  // la búsqueda (folio, celular o nombre) la hace clientes.js; aquí se pinta la ficha y se ajustan condiciones
+  const q = document.getElementById("rem-cliente-q");
   const ficha = document.getElementById("rem-ficha");
-  let clientes = [], marcado = -1, esperaCliente = null;
 
-  const cerrarClientes = () => { cajaClientes.hidden = true; q.setAttribute("aria-expanded", "false"); marcado = -1; };
-  const marcarCliente = (i) => {
-    marcado = i;
-    [...cajaClientes.children].forEach((el, j) => el.setAttribute("aria-selected", String(j === i)));
-  };
   const pintarFicha = (c) => {
+    const nombre = nodo("p", "rem-ficha-nombre");
+    nombre.append(nodo("b", "", c.nombre), " ", nodo("span", "mono", c.folio));
     ficha.replaceChildren(
-      Object.assign(nodo("p", "rem-ficha-nombre"), { innerHTML: "" }),
+      nombre,
       nodo("p", "", `RFC ${c.rfc}${c.telefono ? " · Tel. " + c.telefono : ""} · lista ${c.lista}`),
       ...(c.domicilio.length ? c.domicilio.map((d) => nodo("p", "tenue", d)) : [nodo("p", "tenue", "Sin dirección")]),
       nodo("p", "rn-credito", c.dias_credito ? `Crédito ${c.dias_credito} días · límite ${c.limite} · debe ${c.saldo} · disponible ${c.disponible_txt}` : "Solo contado"),
+      ...(c.vencido_txt ? [nodo("p", "rn-vencido", `Debe ${c.vencido_txt} vencido`)] : []),
     );
-    ficha.firstChild.append(nodo("b", "", c.nombre), " ", nodo("span", "mono", c.folio));
     ficha.hidden = false;
   };
-  const elegirCliente = (c) => {
+  q.addEventListener("cliente-elegido", (e) => {
+    const c = e.detail;
     const cambio = clienteId.value !== String(c.pk);
     clienteId.value = c.pk;
     clienteId.dataset.dias = c.dias_credito;
@@ -37,51 +35,10 @@
     const credito = form.querySelector('input[name=condiciones][value=CREDITO]');
     credito.disabled = !c.dias_credito;
     if (!c.dias_credito) form.querySelector('input[name=condiciones][value=CONTADO]').checked = true;
-    q.value = "";
-    cerrarClientes();
     if (cambio) actualizarPrecios();
     recalcular();
     (form.querySelector(".rem-fila input[name=codigo]") || form.querySelector("input[name=orden_compra]")).focus();
-  };
-  const pintarClientes = () => {
-    cajaClientes.replaceChildren(...clientes.map((c, i) => {
-      const op = nodo("div", "sugerencia rem-sug-cliente");
-      op.setAttribute("role", "option");
-      op.append(nodo("span", "opcion-codigo mono", c.folio), nodo("span", "sugerencia-nombre", ""),
-                nodo("span", "tenue", c.telefono || ""), nodo("span", "tenue", c.dias_credito ? "Crédito" : "Contado"));
-      op.children[1].append(nodo("b", "", c.nombre), " · RFC " + c.rfc);
-      op.addEventListener("mousedown", (e) => { e.preventDefault(); elegirCliente(c); });
-      return op;
-    }));
-    if (!clientes.length) cajaClientes.append(nodo("div", "sugerencias-nota", "No encontré clientes. Revisa el folio o el celular, o dalo de alta abajo."));
-    cajaClientes.hidden = false;
-    q.setAttribute("aria-expanded", "true");
-    marcarCliente(clientes.length ? 0 : -1);
-  };
-  q.addEventListener("input", () => {
-    clearTimeout(esperaCliente);
-    const texto = q.value.trim();
-    if (!texto) { cerrarClientes(); return; }
-    esperaCliente = setTimeout(async () => {
-      try {
-        const r = await fetch(q.dataset.buscar + "?q=" + encodeURIComponent(texto));
-        if (!r.ok || q.value.trim() !== texto) return;
-        clientes = (await r.json()).clientes;
-        pintarClientes();
-      } catch (e) { /* sin red */ }
-    }, 180);
   });
-  q.addEventListener("keydown", (e) => {
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      if (cajaClientes.hidden || !clientes.length) return;
-      e.preventDefault();
-      marcarCliente((marcado + (e.key === "ArrowDown" ? 1 : clientes.length - 1)) % clientes.length);
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      if (!cajaClientes.hidden && clientes[marcado]) elegirCliente(clientes[marcado]);
-    } else if (e.key === "Escape") cerrarClientes();
-  });
-  q.addEventListener("blur", () => setTimeout(cerrarClientes, 150));
 
   // ───────── Partidas ─────────
   const filas = document.getElementById("rem-filas"), cajaSug = document.getElementById("rem-sugerencias");

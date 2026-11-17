@@ -13,9 +13,9 @@
   <div class="rem-buscar">
     <label class="campo" for="rem-cliente-q">Folio de cliente, celular o nombre</label>
     <div class="rem-buscar-campo">
-      <input id="rem-cliente-q" autocomplete="off" spellcheck="false" placeholder="CTE-0012, 442 123 4567 o Taller Ramírez"
+      <input id="rem-cliente-q" autocomplete="off" spellcheck="false" placeholder="CTE-0012, 442 123 4567 o taller ramirez · F4"
              role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="rem-clientes"
-             data-buscar="{% url 'clientes_buscar' %}"{% if not cliente_actual %} autofocus{% endif %}>
+             data-clientes="{% url 'clientes_buscar' %}"{% if not cliente_actual %} autofocus{% endif %}>
       <div class="sugerencias" id="rem-clientes" role="listbox" aria-label="Clientes" hidden></div>
     </div>
   </div>
@@ -25,6 +25,7 @@
     <p>RFC {{ c.rfc }}{% if c.telefono %} · Tel. {{ c.telefono }}{% endif %} · lista {{ c.lista }}</p>
     {% for renglon in c.domicilio %}<p class="tenue">{{ renglon }}</p>{% empty %}<p class="tenue">Sin dirección</p>{% endfor %}
     <p class="rn-credito">{% if c.dias_credito %}Crédito {{ c.dias_credito }} días · límite {{ c.limite }} · debe {{ c.saldo }} · <b>disponible {{ c.disponible_txt }}</b>{% else %}Solo contado{% endif %}</p>
+    {% if c.vencido_txt %}<p class="rn-vencido">Debe {{ c.vencido_txt }} vencido</p>{% endif %}
     {% endwith %}{% endif %}
   </div>
   <div class="rem-cliente-nuevo">

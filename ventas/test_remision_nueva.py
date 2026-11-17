@@ -8,6 +8,7 @@ from django.urls import reverse
 from compras.listas import importar
 from compras.tests import lista
 from ventas import nip as nips
+from ventas import clientes as cli
 from ventas import remisiones as rem
 from ventas.models import Cliente, FormaPago, RemisionBorrador, Venta
 from ventas.servicios import (cancelar_venta, cobrar_remision, emitir_remision, esperado_en_caja, por_que_no_cancelar,
@@ -47,12 +48,12 @@ class BuscarClienteTests(RemisionesBase):
         for texto in (folio, folio.lower(), f"cte{self.taller.pk}", str(self.taller.pk), "4421234567", "123 4567",
                       "hermanos ruiz"):
             with self.subTest(texto=texto):
-                self.assertIn(self.taller, rem.buscar_clientes(texto))
-        self.assertEqual(rem.buscar_clientes("CTE-9999"), [])
-        self.assertEqual(rem.buscar_clientes(""), [])
+                self.assertIn(self.taller, cli.buscar_clientes(texto))
+        self.assertEqual(cli.buscar_clientes("CTE-9999"), [])
+        self.assertEqual(cli.buscar_clientes(""), [])
         self.taller.activo = False
         self.taller.save()
-        self.assertEqual(rem.buscar_clientes(folio), [])
+        self.assertEqual(cli.buscar_clientes(folio), [])
 
     def test_la_busqueda_da_su_credito_disponible(self):
         registrar_venta(self.turno, self.taller, [{"producto": self.filtro, "cantidad": 2}], FormaPago.CREDITO)  # 214
