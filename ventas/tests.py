@@ -113,3 +113,10 @@ class CreditoYCajaTests(Base):
     def test_un_turno_abierto_por_usuario(self):
         with self.assertRaises(ValidationError):
             abrir_turno(self.user)
+
+
+class SaludTests(TestCase):
+    def test_salud_contesta_sin_sesion_y_sin_tocar_la_base(self):
+        with self.assertNumQueries(0):
+            r = self.client.get("/salud/")
+        self.assertEqual((r.status_code, r.content), (200, b"ok"))
