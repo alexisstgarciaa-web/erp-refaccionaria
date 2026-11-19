@@ -22,14 +22,15 @@ python manage.py runserver   # http://127.0.0.1:8000/admin
 python manage.py test
 ```
 
-## Probarlo en la nube (Render, plan gratis)
+## En la nube gratis (Render + Neon)
 
-1. En render.com, entrar con la cuenta de GitHub.
-2. New › Blueprint › repositorio `erp-refaccionaria` (rama a probar). Render lee `render.yaml`: crea la base PostgreSQL y el servicio web.
-3. Llenar `DJANGO_SUPERUSER_USERNAME`, `DJANGO_SUPERUSER_PASSWORD` y `NEGOCIO_NOMBRE`, y aplicar. `build.sh` instala, migra y crea el administrador la primera vez.
+1. En neon.com crear un proyecto (Postgres, región AWS US West 2 · Oregon). En Branches › la rama › Computes › Edit dejar el máximo en 0.25 CU para que alcancen las 100 horas de cómputo del plan gratis. Con «Connect», apagar «Connection pooling» y copiar la cadena de conexión.
+2. En render.com, entrar con la cuenta de GitHub. New › Blueprint › repositorio `erp-refaccionaria` (rama a probar). Render lee `render.yaml` y crea el servicio web.
+3. Llenar `DATABASE_URL` (la cadena de Neon), `DJANGO_SUPERUSER_USERNAME`, `DJANGO_SUPERUSER_PASSWORD` y `NEGOCIO_NOMBRE`, y aplicar. `build.sh` instala, migra, carga los códigos postales y crea el administrador la primera vez.
 4. Abrir la dirección que da Render, entrar, y en Administración › Partidas de lista de proveedor › "Importar lista (Excel)" subir los archivos de MORSA.
+5. Para que no se duerma: en cron-job.org (gratis) un trabajo que visite `https://<la dirección>/salud/` cada 10 minutos. Las 750 horas gratis de Render al mes alcanzan para tenerlo despierto todo el mes.
 
-En el plan gratis el servicio se duerme tras 15 minutos sin uso (tarda cerca de un minuto en despertar) y la base gratuita vence a los 30 días; para operar se pasa a los planes de pago (~20-25 USD/mes).
+En el plan gratis Render duerme el servicio tras 15 minutos sin visitas (tarda cerca de un minuto en despertar) y Neon apaga la base a los 5 minutos sin uso (despierta en menos de un segundo). Neon gratis no vence, trae 1 GB y no hace respaldos (solo guarda 6 horas de historial). Si se acaban las horas de cómputo del mes, la base se pausa hasta el siguiente sin perder datos.
 
 ### Correo con el PDF (opcional)
 

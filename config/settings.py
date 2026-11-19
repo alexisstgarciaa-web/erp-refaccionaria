@@ -94,10 +94,13 @@ WSGI_APPLICATION = "config.wsgi.application"
 if os.environ.get("DATABASE_URL"):
     import dj_database_url
 
-    # conn_health_checks: si la base se apagó por falta de uso (Neon lo hace a los 5 minutos), la conexión vieja se
-    # descarta y se abre otra en vez de fallar la primera petición.
-    DATABASES = {"default": dj_database_url.parse(os.environ["DATABASE_URL"], conn_max_age=600,
+    # Neon apaga la base a los 5 minutos sin uso: las conexiones se guardan menos que eso y, antes de reusarlas, se
+    # revisa que sigan vivas (conn_health_checks) para no fallar la primera petición después de una pausa.
+    DATABASES = {"default": dj_database_url.parse(os.environ["DATABASE_URL"], conn_max_age=240,
                                                   conn_health_checks=True)}
+    if "-pooler." in DATABASES["default"].get("HOST", ""):
+        # La conexión «pooled» de Neon (PgBouncer por transacción) no admite cursores del lado del servidor
+        DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
 else:
     DATABASES = {
         "default": {
