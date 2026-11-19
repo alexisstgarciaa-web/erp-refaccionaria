@@ -1,5 +1,5 @@
 {% extends "ventas/base.html" %}
-{% load erp %}
+{% load erp static %}
 {% block titulo %}Caja{% endblock %}
 {% block contenido %}
 <header class="pagina-titulo">
@@ -22,13 +22,34 @@
 </section>
 {% endif %}
 
+{% if por_cobrar %}
+<section class="panel bloque caja-por-cobrar" id="por-cobrar">
+  <h2>Remisiones por cobrar <small>{{ por_cobrar|length }}</small></h2>
+  <p>Remisiones de contado que ya salieron del inventario y falta cobrar. Lo cobrado entra al corte de tu turno.</p>
+  <ul class="por-cobrar-lista">
+    {% for v in por_cobrar %}
+    <li>
+      <div class="por-cobrar-dato">
+        <a class="folio" href="{% url 'venta' v.folio %}">{{ v.folio }}</a>
+        <span>{{ v.cliente }} <span class="mono tenue">{{ v.cliente.folio }}</span></span>
+        <small class="tenue">{{ v.fecha|date:"j M, H:i" }}{% if v.usuario %} · {{ v.usuario.get_short_name|default:v.usuario.get_username }}{% endif %}{% if v.orden_compra %} · OC {{ v.orden_compra }}{% endif %}</small>
+        <b class="por-cobrar-total">{{ v.total|pesos }}</b>
+      </div>
+      {% if turno %}{% include "ventas/_cobrar_remision.html" with formas=formas desde="caja" %}{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% if not turno %}<p class="tenue">Abre la caja para cobrarlas.</p>{% endif %}
+</section>
+{% endif %}
+
 {% if not turno %}
 <section class="panel bloque">
   <h2>Abrir caja</h2>
   <p>Cuenta el efectivo con el que arrancas el turno.</p>
-  <form method="post" class="formulario">{% csrf_token %}
+  <form method="post" class="formulario" data-nip="vendedor" data-nip-para="Abrir caja">{% csrf_token %}
     <input type="hidden" name="accion" value="abrir">
-    <label class="campo">Fondo inicial en efectivo <input name="fondo" inputmode="decimal" value="0" required></label>
+    <label class="campo">Fondo inicial en efectivo <input name="fondo" inputmode="decimal" data-cifra="pesos" value="0" required></label>
     <button class="btn" type="submit">Abrir caja</button>
   </form>
 </section>
@@ -36,10 +57,10 @@
 <section class="panel bloque">
   <h2>Cerrar turno</h2>
   <p>Cuenta lo que hay por forma de pago sin ver lo esperado. El sistema lo compara contra ventas de contado, abonos y fondo.</p>
-  <form method="post" class="formulario">{% csrf_token %}
+  <form method="post" class="formulario" data-nip="vendedor" data-nip-para="Hacer el corte">{% csrf_token %}
     <input type="hidden" name="accion" value="cerrar">
     {% for nombre, campo, esperado in esperado %}
-      <label class="campo">{{ nombre }} contado <input name="{{ campo }}" inputmode="decimal" required placeholder="0"></label>
+      <label class="campo">{{ nombre }} contado <input name="{{ campo }}" inputmode="decimal" data-cifra="pesos" required placeholder="0"></label>
     {% endfor %}
     <button class="btn" type="submit">Hacer corte</button>
   </form>
@@ -51,7 +72,7 @@
     <thead><tr><th>Folio</th><th>Cliente</th><th>Pago</th><th>Estado</th><th class="num">Total</th></tr></thead>
     <tbody>
       {% for v in ventas %}
-      <tr><td>{{ v.folio }}</td><td>{{ v.cliente }}</td><td>{{ v.get_forma_pago_display }}</td><td>{{ v.get_estado_display }}</td><td class="num">{{ v.total|pesos }}</td></tr>
+      <tr><td><a class="folio" href="{% url 'venta' v.folio %}">{{ v.folio }}</a></td><td>{{ v.cliente }}</td><td>{{ v.get_forma_pago_display }}</td><td>{{ v.get_estado_display }}</td><td class="num">{{ v.total|pesos }}</td></tr>
       {% empty %}
       <tr><td colspan="5" style="color: var(--texto-3)">Todavía no hay ventas en este turno.</td></tr>
       {% endfor %}
@@ -60,3 +81,4 @@
 </section>
 {% endif %}
 {% endblock %}
+{% block scripts %}{% if por_cobrar and turno %}<script src="{% static 'ventas/cobrar.js' %}" defer></script>{% endif %}{% endblock %}

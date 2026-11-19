@@ -1,0 +1,25 @@
+{% load static %}<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Cotización no disponible · {{ negocio }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,400..900;1,62..125,400..900&family=Geist+Mono:wght@400..600&display=swap">
+<link rel="stylesheet" href="{% static 'ventas/erp.css' %}">
+</head>
+<body class="doc">
+<article class="remision doc-aviso">
+  <header class="rem-cabeza">
+    <div class="rem-negocio">
+      <span class="sello-negocio" aria-hidden="true">{{ negocio|slice:":1" }}</span>
+      <div><b>{{ negocio }}</b></div>
+    </div>
+  </header>
+  <h1>Este enlace ya no abre la cotización</h1>
+  <p>Los enlaces de cotización sirven {{ dias }} días, o el enlace se copió incompleto. Pídanos una cotización nueva y con gusto se la mandamos.</p>
+</article>
+</body>
+</html>

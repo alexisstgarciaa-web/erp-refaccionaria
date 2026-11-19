@@ -1,5 +1,7 @@
 Django>=5.1,<5.2
 openpyxl>=3.1,<4
+# PDF de cotizaciones y remisiones para mandarlas al cliente (puro Python)
+reportlab==5.0.1
 # Publicación (Render u otro servidor)
 gunicorn==23.0.0
 whitenoise==6.8.2
