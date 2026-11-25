@@ -120,3 +120,13 @@ class SaludTests(TestCase):
         with self.assertNumQueries(0):
             r = self.client.get("/salud/")
         self.assertEqual((r.status_code, r.content), (200, b"ok"))
+
+    def test_icono_de_la_pestana_con_la_inicial_del_negocio(self):
+        with self.settings(NEGOCIO_NOMBRE="<Lubricantes Soto>"):
+            r = self.client.get("/favicon.svg")
+        self.assertEqual((r.status_code, r["Content-Type"]), (200, "image/svg+xml"))
+        self.assertIn("&lt;</text>", r.content.decode())  # la inicial va escapada
+        with self.settings(NEGOCIO_NOMBRE="refaccionaria López"):
+            self.assertIn(">R</text>", self.client.get("/favicon.svg").content.decode())
+        self.assertEqual(self.client.get("/favicon.ico").status_code, 301)
+        self.assertContains(self.client.get("/entrar/"), 'rel="icon"')

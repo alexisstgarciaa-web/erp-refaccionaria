@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,400..900;1,62..125,400..900&family=Geist+Mono:wght@400..600&display=swap">
 <link rel="stylesheet" href="{% static 'ventas/erp.css' %}">
 <style>@page { size: {% if formato == 'ticket' %}80mm auto; margin: 3mm{% else %}letter; margin: 12mm{% endif %}; }</style>
+<link rel="icon" href="{% url 'icono' %}" type="image/svg+xml">
 </head>
 <body class="doc doc-{{ formato }}">
 <nav class="doc-herramientas" aria-label="Remisión">
