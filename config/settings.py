@@ -98,9 +98,9 @@ if os.environ.get("DATABASE_URL"):
     # revisa que sigan vivas (conn_health_checks) para no fallar la primera petición después de una pausa.
     DATABASES = {"default": dj_database_url.parse(os.environ["DATABASE_URL"], conn_max_age=240,
                                                   conn_health_checks=True)}
-    if "-pooler." in DATABASES["default"].get("HOST", ""):
-        # La conexión «pooled» de Neon (PgBouncer por transacción) no admite cursores del lado del servidor
-        DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
+    # Neon da por defecto la cadena «pooled» (PgBouncer por transacción, host con -pooler). Se usa la conexión directa,
+    # que es el mismo host sin -pooler: así da igual cuál se copie.
+    DATABASES["default"]["HOST"] = DATABASES["default"].get("HOST", "").replace("-pooler.", ".")
 else:
     DATABASES = {
         "default": {

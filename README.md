@@ -24,7 +24,7 @@ python manage.py test
 
 ## En la nube gratis (Render + Neon)
 
-1. En neon.com crear un proyecto (Postgres, región AWS US West 2 · Oregon). En Branches › la rama › Computes › Edit dejar el máximo en 0.25 CU para que alcancen las 100 horas de cómputo del plan gratis. Con «Connect», apagar «Connection pooling» y copiar la cadena de conexión.
+1. En neon.com crear un proyecto (Postgres, región AWS US West 2 · Oregon). En Branches › la rama › Computes › Edit dejar el máximo en 0.25 CU para que alcancen las 100 horas de cómputo del plan gratis. Con «Connect», copiar la cadena de conexión (da igual si es la de «Connection pooling»: el sistema usa la directa).
 2. En render.com, entrar con la cuenta de GitHub. New › Blueprint › repositorio `erp-refaccionaria` (rama a probar). Render lee `render.yaml` y crea el servicio web.
 3. Llenar `DATABASE_URL` (la cadena de Neon), `DJANGO_SUPERUSER_USERNAME`, `DJANGO_SUPERUSER_PASSWORD` y `NEGOCIO_NOMBRE`, y aplicar. `build.sh` instala, migra, carga los códigos postales y crea el administrador la primera vez.
 4. Abrir la dirección que da Render, entrar, y en Administración › Partidas de lista de proveedor › "Importar lista (Excel)" subir los archivos de MORSA.
