@@ -30,6 +30,8 @@ python manage.py test
 4. Abrir la dirección que da Render, entrar, y en Administración › Partidas de lista de proveedor › "Importar lista (Excel)" subir los archivos de MORSA.
 5. Para que no se duerma: en cron-job.org (gratis) un trabajo que visite `https://<la dirección>/salud/` cada 10 minutos. Las 750 horas gratis de Render al mes alcanzan para tenerlo despierto todo el mes.
 
+Para pasar a Neon lo que había en otra base PostgreSQL (la de Render): en Render, en Environment, agregar `DATABASE_URL_ANTERIOR` con la cadena de conexión de la base vieja y publicar. `build.sh` corre `traer_base`, que copia todas las tablas tal cual, una sola vez y solo si la base actual sigue vacía (sin productos, listas, ventas ni NIPs); si algo falla, la base actual queda como estaba y el motivo sale en el registro de la publicación. Después la variable se puede quitar.
+
 En el plan gratis Render duerme el servicio tras 15 minutos sin visitas (tarda cerca de un minuto en despertar) y Neon apaga la base a los 5 minutos sin uso (despierta en menos de un segundo). Neon gratis no vence, trae 1 GB y no hace respaldos (solo guarda 6 horas de historial). Si se acaban las horas de cómputo del mes, la base se pausa hasta el siguiente sin perder datos.
 
 ### Correo con el PDF (opcional)
