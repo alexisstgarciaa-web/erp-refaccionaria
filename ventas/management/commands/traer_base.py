@@ -23,6 +23,9 @@ ANOTACION = "erp_traslado"  # tabla donde queda anotado que ya se trajo
 NEGOCIO = ("catalogo", "inventario", "compras", "ventas")
 # Lo que una base recién creada ya trae o se crea solo al primer uso: no cuenta como «ya tiene datos»
 DE_FABRICA = {"ventas_codigopostal", "ventas_cliente", "catalogo_listaprecio"}
+# Lo que el dueño aprobó reemplazar el 2026-11-25: antes del traslado dio de alta en la base nueva 1 NIP y abrió 1
+# caja, sin ventas. Solo eso y no más: con cualquier otra cosa, o con más filas, el traslado se sigue deteniendo.
+SE_REEMPLAZA = {"ventas_nip": 1, "ventas_turno": 1}
 
 
 class NoSePuede(Exception):
@@ -97,7 +100,7 @@ class Command(BaseCommand):
                 if hecho:
                     raise NoSePuede(f"Ya se trajo el {hecho}; no se repite.")
             tablas = sorted(connection.introspection.django_table_names(only_existing=True))
-            ocupadas = _con_datos(cur, tablas)
+            ocupadas = {t: n for t, n in _con_datos(cur, tablas).items() if n > SE_REEMPLAZA.get(t, 0)}
             if ocupadas:
                 raise NoSePuede("La base actual ya tiene datos (" + ", ".join(f"{t}: {n:,}" for t, n in ocupadas.items())
                                 + ") y no se enciman.")
