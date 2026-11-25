@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,400..900;1,62..125,400..900&family=Geist+Mono:wght@400..600&display=swap">
 <link rel="stylesheet" href="{% static 'ventas/erp.css' %}">
+<link rel="icon" href="{% url 'icono' %}" type="image/svg+xml">
 </head>
 <body class="{% block cuerpo %}{% endblock %}">
 <header class="barra"><div class="dentro">
@@ -19,7 +20,10 @@
   <nav class="secciones" aria-label="Secciones">
     {% url 'mostrador' as u_mostrador %}{% url 'caja' as u_caja %}
     <a href="{{ u_mostrador }}"{% if request.path == u_mostrador %} aria-current="page"{% endif %}>Mostrador</a>
-    <a href="{{ u_caja }}"{% if request.path == u_caja %} aria-current="page"{% endif %}>Caja</a>
+    <a href="{{ u_caja }}"{% if request.path == u_caja %} aria-current="page"{% endif %}>Caja{% if remisiones_por_cobrar %} <span class="insignia" title="Remisiones de contado por cobrar">{{ remisiones_por_cobrar }}</span>{% endif %}</a>
+    {% url 'turnos' as u_turnos %}<a href="{{ u_turnos }}"{% if request.path == u_turnos %} aria-current="page"{% endif %}>Turnos</a>
+    {% url 'remisiones' as u_remisiones %}<a href="{{ u_remisiones }}"{% if request.path|slice:":12" == "/remisiones/" or request.path|slice:":14" == "/cotizaciones/" or request.path|slice:":14" == "/devoluciones/" %} aria-current="page"{% endif %}>Remisiones</a>
+    {% url 'pedidos' as u_pedidos %}<a href="{{ u_pedidos }}"{% if request.path == u_pedidos %} aria-current="page"{% endif %}>Pedidos{% if pedidos_listos %} <span class="insignia" title="Ya llegaron: hay que avisar">{{ pedidos_listos }}</span>{% endif %}</a>
     {% if user.is_staff %}<a href="{% url 'admin:index' %}">Administración</a>{% endif %}
   </nav>
   <div class="usuario">
@@ -35,6 +39,29 @@
 </div></main>
 <footer class="pie-sitio"><div class="dentro">{{ negocio }} · Precios con IVA incluido. Aplicaciones y costos según las listas de proveedor cargadas.</div></footer>
 {% block abajo %}{% endblock %}
+{% if user.is_authenticated %}
+<dialog class="nip-dialogo" id="nip-dialogo" aria-labelledby="nip-titulo">
+  <form method="dialog" class="nip-forma">
+    <h2 id="nip-titulo">Tu NIP</h2>
+    <p id="nip-para" class="nip-para"></p>
+    <input id="nip-campo" type="password" inputmode="numeric" autocomplete="off" maxlength="6" pattern="[0-9]{4,6}"
+           aria-label="NIP" aria-describedby="nip-para">
+    <p class="nip-ayuda" id="nip-ayuda">4 a 6 números · Enter para seguir · Esc para regresar</p>
+    <div class="nip-botones">
+      <button type="button" class="btn-sec" id="nip-regresar">Regresar</button>
+      <button type="submit" value="ok" class="btn">Seguir</button>
+    </div>
+  </form>
+</dialog>
+{% endif %}
 {% block scripts %}{% endblock %}
+<script src="{% static 'ventas/campos.js' %}" defer></script>
+{% if user.is_authenticated %}<script src="{% static 'ventas/nip.js' %}" defer></script>
+<script src="{% static 'ventas/cifras.js' %}" defer></script>
+<script src="{% static 'ventas/cp.js' %}" defer></script>
+<script src="{% static 'ventas/clientes.js' %}" defer></script>
+<script src="{% static 'ventas/mandar.js' %}" defer></script>
+<script src="{% static 'ventas/vivo.js' %}" defer></script>
+<script src="{% static 'ventas/imprimir.js' %}" defer></script>{% endif %}
 </body>
 </html>

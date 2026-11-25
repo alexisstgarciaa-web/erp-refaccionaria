@@ -1,0 +1,50 @@
+{% load static %}<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Toma tu turno · {{ negocio }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,400..900;1,62..125,400..900&family=Geist+Mono:wght@400..600&display=swap">
+<link rel="stylesheet" href="{% static 'ventas/erp.css' %}">
+<link rel="icon" href="{% url 'icono' %}" type="image/svg+xml">
+</head>
+<body class="kiosco">
+<header class="kiosco-marca"><span class="sello-negocio" aria-hidden="true">{{ negocio|slice:":1" }}</span><b>{{ negocio }}</b></header>
+<main class="kiosco-caja">
+{% if nuevo %}
+  <section class="kiosco-turno" data-volver="{{ aqui }}" data-segundos="{{ segundos }}" aria-live="polite">
+    <p class="kiosco-etiqueta">Tu turno</p>
+    <p class="kiosco-numero">{{ nuevo.numero }}</p>
+    {% if nuevo.quien %}<p class="kiosco-quien">{{ nuevo.quien }}</p>{% endif %}
+    {% if nuevo.cliente_id %}<p class="kiosco-preferente">Cliente registrado: pasas antes</p>{% endif %}
+    <p class="kiosco-nota">Toma tu papelito y espera a que te llamen por tu número en la pantalla. Con este mismo número pagas en caja.</p>
+    <div class="kiosco-botones">
+      <button class="btn-sec" type="button" data-imprimir="{{ papel_url }}" data-imprimir-al-abrir="turno">Imprimir otra vez</button>
+      <a class="btn" href="{{ aqui }}">Listo</a>
+    </div>
+  </section>
+{% else %}
+  <form method="post" action="{{ aqui }}" class="kiosco-forma" autocomplete="off">{% csrf_token %}
+    <h1>Toma tu turno</h1>
+    {% if error %}<p class="kiosco-error" role="alert">{{ error }}</p>{% endif %}
+    <fieldset class="kiosco-pregunta">
+      <legend>¿Tienes número de cliente?</legend>
+      <label><input type="radio" name="tiene" value="si"{% if intento.tiene == 'si' or intento.numero_cliente %} checked{% endif %}><span>Sí tengo</span></label>
+      <label><input type="radio" name="tiene" value="no"{% if intento.tiene == 'no' %} checked{% endif %}><span>No tengo</span></label>
+    </fieldset>
+    <label class="kiosco-campo" data-para="si">Tu número de cliente o tu celular
+      <input name="numero_cliente" inputmode="numeric" maxlength="30" value="{{ intento.numero_cliente }}" placeholder="12 o 4421234567">
+      <small>Los clientes registrados pasan antes.</small></label>
+    <label class="kiosco-campo" data-para="no">Tu nombre <i>opcional</i>
+      <input name="nombre" maxlength="60" value="{{ intento.nombre }}" placeholder="Para llamarte por tu nombre"></label>
+    <button class="btn kiosco-boton" type="submit">Tomar turno</button>
+  </form>
+{% endif %}
+</main>
+<script src="{% static 'ventas/kiosco.js' %}" defer></script>
+<script src="{% static 'ventas/imprimir.js' %}" defer></script>
+</body>
+</html>

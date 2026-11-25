@@ -113,3 +113,57 @@ class CreditoYCajaTests(Base):
     def test_un_turno_abierto_por_usuario(self):
         with self.assertRaises(ValidationError):
             abrir_turno(self.user)
+
+
+class SaludTests(TestCase):
+    def test_salud_contesta_sin_sesion_y_sin_tocar_la_base(self):
+        with self.assertNumQueries(0):
+            r = self.client.get("/salud/")
+        self.assertEqual((r.status_code, r.content), (200, b"ok"))
+
+    def test_icono_de_la_pestana_con_la_inicial_del_negocio(self):
+        with self.settings(NEGOCIO_NOMBRE="<Lubricantes Soto>"):
+            r = self.client.get("/favicon.svg")
+        self.assertEqual((r.status_code, r["Content-Type"]), (200, "image/svg+xml"))
+        self.assertIn("&lt;</text>", r.content.decode())  # la inicial va escapada
+        with self.settings(NEGOCIO_NOMBRE="refaccionaria López"):
+            self.assertIn(">R</text>", self.client.get("/favicon.svg").content.decode())
+        self.assertEqual(self.client.get("/favicon.ico").status_code, 301)
+        self.assertContains(self.client.get("/entrar/"), 'rel="icon"')
+
+
+class TrasladoDeBaseTests(TestCase):
+    """traer_base (el cambio de la base de Render a Neon) corre en cada publicación: sin la variable, o donde no
+    aplica, no hace nada y nunca detiene la publicación. El traslado en sí se probó con dos bases PostgreSQL."""
+
+    def _correr(self, anterior=None):
+        import os
+        from io import StringIO
+        from unittest import mock
+
+        from django.core.management import call_command
+
+        entorno = {k: v for k, v in os.environ.items() if k != "DATABASE_URL_ANTERIOR"}
+        if anterior is not None:
+            entorno["DATABASE_URL_ANTERIOR"] = anterior
+        salida = StringIO()
+        with mock.patch.dict(os.environ, entorno, clear=True):
+            call_command("traer_base", stdout=salida)
+        return salida.getvalue()
+
+    def test_sin_base_anterior_no_hace_nada(self):
+        self.assertIn("no hay base anterior configurada", self._correr())
+        self.assertIn("no hay base anterior configurada", self._correr("   "))
+
+    def test_fuera_de_postgresql_avisa_y_no_falla(self):
+        self.assertIn("no se trae nada", self._correr("postgres://alguien:secreto@servidor.invalid/base"))
+
+    def test_los_errores_no_ensenan_la_contrasena(self):
+        from ventas.management.commands.traer_base import _sin_secretos
+
+        url = "postgres://erp_user:S3cr3t0-Largo@dpg-abc.oregon-postgres.render.com/erp_db"
+        for texto in (f'missing "=" after "{url}" in connection info string',
+                      'falló con la clave S3cr3t0-Largo', "postgresql://otro:clave@host/db no respondió"):
+            limpio = _sin_secretos(texto, url)
+            self.assertNotIn("S3cr3t0-Largo", limpio)
+            self.assertNotIn("otro:clave", limpio)

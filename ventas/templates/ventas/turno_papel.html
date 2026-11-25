@@ -1,0 +1,24 @@
+{% load static %}<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Turno {{ pase.numero }} · {{ negocio }}</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,400..900;1,62..125,400..900&display=swap">
+<link rel="stylesheet" href="{% static 'ventas/erp.css' %}">
+<style>@page { size: 80mm auto; margin: 3mm; }</style>
+<link rel="icon" href="{% url 'icono' %}" type="image/svg+xml">
+</head>
+<body class="doc doc-ticket">
+<article class="papel-turno">
+  <b class="papel-negocio">{{ negocio }}</b>
+  <span class="papel-etiqueta">Turno</span>
+  <b class="papel-numero">{{ pase.numero }}</b>
+  {% if pase.quien %}<span class="papel-quien">{{ pase.quien }}</span>{% endif %}
+  {% if pase.cliente_id %}<span class="papel-preferente">Cliente registrado {{ pase.cliente.folio }}</span>{% endif %}
+  <span class="papel-fecha">{{ pase.creado|date:"j M Y, H:i" }}</span>
+  <p>Te llamamos por tu número. Con este mismo turno pagas en caja y recoges tu mercancía.</p>
+</article>
+</body>
+</html>

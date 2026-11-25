@@ -11,6 +11,8 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 import os
+import sys
+import tempfile
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -70,7 +72,7 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [BASE_DIR / "templates"],  # templates/admin: ajustes a la Administración
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -94,7 +96,13 @@ WSGI_APPLICATION = "config.wsgi.application"
 if os.environ.get("DATABASE_URL"):
     import dj_database_url
 
-    DATABASES = {"default": dj_database_url.parse(os.environ["DATABASE_URL"], conn_max_age=600)}
+    # Neon apaga la base a los 5 minutos sin uso: las conexiones se guardan menos que eso y, antes de reusarlas, se
+    # revisa que sigan vivas (conn_health_checks) para no fallar la primera petición después de una pausa.
+    DATABASES = {"default": dj_database_url.parse(os.environ["DATABASE_URL"], conn_max_age=240,
+                                                  conn_health_checks=True)}
+    # Neon da por defecto la cadena «pooled» (PgBouncer por transacción, host con -pooler). Se usa la conexión directa,
+    # que es el mismo host sin -pooler: así da igual cuál se copie.
+    DATABASES["default"]["HOST"] = DATABASES["default"].get("HOST", "").replace("-pooler.", ".")
 else:
     DATABASES = {
         "default": {
@@ -153,8 +161,45 @@ LOGOUT_REDIRECT_URL = "entrar"
 
 # Nombre que aparece en la barra y en el ticket.
 NEGOCIO_NOMBRE = os.environ.get("NEGOCIO_NOMBRE", "Refaccionaria")
+# Datos que salen en la remisión (opcionales; se llenan en las variables de entorno de Render)
+NEGOCIO_RFC = os.environ.get("NEGOCIO_RFC", "")
+NEGOCIO_DIRECCION = os.environ.get("NEGOCIO_DIRECCION", "")
+NEGOCIO_TELEFONO = os.environ.get("NEGOCIO_TELEFONO", "")
 # Lo que no hay en anaquel y se ofrece de la lista del proveedor: costo × (1 + esto) + IVA.
 SOBREPRECIO_PEDIDO = os.environ.get("SOBREPRECIO_PEDIDO", "0.37")
+# Días que se respetan los precios de una cotización
+COTIZACION_VIGENCIA_DIAS = int(os.environ.get("COTIZACION_VIGENCIA_DIAS", "7"))
+
+# Correo con el PDF adjunto (cotizaciones y remisiones). Sin cuenta, el botón de correo abre el menú de compartir de
+# la compu con el PDF. Render gratis no deja salir por SMTP: o Render de pago con Gmail (EMAIL_HOST_USER con la cuenta
+# @gmail.com y una contraseña de aplicación en EMAIL_HOST_PASSWORD), o Brevo por su API (BREVO_API_KEY).
+BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "").strip()
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "").strip()
+# Con una cuenta @gmail.com no hace falta EMAIL_HOST; con Google Workspace (dominio propio) sí: smtp.gmail.com
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "").strip() or (
+    "smtp.gmail.com" if EMAIL_HOST_USER.lower().endswith(("@gmail.com", "@googlemail.com")) else "")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "").strip()
+if EMAIL_HOST == "smtp.gmail.com":
+    EMAIL_HOST_PASSWORD = "".join(EMAIL_HOST_PASSWORD.split())  # Google la muestra en grupos de 4 con espacios
+EMAIL_USE_SSL = EMAIL_PORT == 465
+EMAIL_USE_TLS = not EMAIL_USE_SSL
+EMAIL_TIMEOUT = 20  # que un correo atorado no tumbe la página
+if BREVO_API_KEY:
+    EMAIL_BACKEND = "ventas.correo.BrevoBackend"
+CORREO_SERVIDOR = bool(BREVO_API_KEY or (EMAIL_HOST and EMAIL_HOST_USER and EMAIL_HOST_PASSWORD))
+# Quién lo manda («Refaccionaria López <ventas@refalopez.mx>»; con Gmail, la misma cuenta) y a dónde contesta el cliente
+CORREO_REMITENTE = os.environ.get("CORREO_REMITENTE", "").strip() or (f"{NEGOCIO_NOMBRE} <{EMAIL_HOST_USER}>" if EMAIL_HOST_USER else "")
+DEFAULT_FROM_EMAIL = CORREO_REMITENTE or "webmaster@localhost"
+NEGOCIO_CORREO = os.environ.get("NEGOCIO_CORREO", "").strip()
+
+# La pantalla de llamados de turnos lee de un archivo (lo comparten todos los procesos del servidor) para no pedir
+# sesión ni consultar la base cada pocos segundos.
+CACHES = {
+    "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
+    "pantalla": {"BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
+                 "LOCATION": os.path.join(tempfile.gettempdir(), "erp-pantalla-pruebas" if "test" in sys.argv else "erp-pantalla")},
+}
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field

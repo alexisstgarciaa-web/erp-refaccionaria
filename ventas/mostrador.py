@@ -11,20 +11,22 @@ from dataclasses import dataclass
 from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
+import re
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Case, IntegerField, Q, Value, When
 from django.utils import timezone
 
 from catalogo.models import ListaPrecio, Precio, Producto
-import re
 
 from compras.aplicaciones import ARMADORAS, coincide
 from compras.listas import agregar_a_catalogo
 from compras.models import OrdenCompra, OrdenCompraLinea, PartidaListaProveedor
 
-from .models import Cliente, FormaPago
-from .servicios import registrar_venta
+from .models import Cliente, FormaPago, Pase, PedidoCliente, TicketGuardado
+from .servicios import dar_pase, registrar_para_caja
 
 NIVELES = [("ECO", "Económico"), ("STD", "Estándar"), ("PRE", "Premium")]
 IVA = Decimal("1.16")
@@ -198,14 +200,20 @@ class Linea:
     opcion: Opcion
     cantidad: Decimal
     nivel: str = ""
+    precio_especial: Decimal | None = None  # el que se tecleó en mostrador, con IVA; None: el de la lista
+    pedido: int | None = None  # PedidoCliente que se entrega con este renglón
 
     @property
     def sobre_pedido(self):
         return self.opcion.existencia is None or self.opcion.existencia < self.cantidad
 
     @property
+    def precio(self):
+        return self.precio_especial if self.precio_especial is not None else self.opcion.precio
+
+    @property
     def importe(self):
-        return (self.opcion.precio or 0) * self.cantidad
+        return (self.precio or 0) * self.cantidad
 
     @property
     def fraccion(self):
@@ -230,15 +238,52 @@ class Ticket:
         self.datos["cliente"] = Cliente.objects.get(pk=pk, activo=True).pk
         self.guardar()
 
-    def agregar(self, clave, pos=None, cantidad=None, nivel=""):
+    @property
+    def pase(self):
+        """El turno del cliente que se está atendiendo en este ticket, si es de hoy y sigue abierto."""
+        pk = self.datos.get("pase")
+        return Pase.objects.filter(pk=pk, dia=timezone.localdate(), cerrado__isnull=True).first() if pk else None
+
+    def atender(self, pase):
+        self.datos["pase"] = pase.pk if pase else None
+        self.guardar()
+
+    def agregar(self, clave, pos=None, cantidad=None, nivel="", precio=None):
+        """precio: con IVA por unidad, cuando en mostrador se teclea uno distinto al de la lista.
+        Devuelve el número de renglón que quedó con la pieza (para resaltarlo en el ticket)."""
         resolver(clave)  # valida que exista
+        self.session.pop("ticket_deshacer", None)  # ya empezó otro ticket
         p = POR_CLAVE.get(pos)
         cantidad = str(cantidad or (p.cantidad if p else 1))
         nivel = nivel if nivel in dict(NIVELES) else ""
         lineas = [ln for ln in self.datos["lineas"] if not (p and ln["pos"] == p.clave)]  # una opción por pieza
-        lineas.append({"clave": clave, "pos": p.clave if p else "", "cantidad": cantidad, "nivel": nivel})
+        suelta = next((ln for ln in lineas if not p and not ln["pos"] and ln["clave"] == clave), None)
+        if suelta:  # el mismo código tecleado otra vez suma a su renglón
+            suelta["cantidad"] = str(Decimal(suelta["cantidad"]) + Decimal(cantidad))
+            if precio is not None:
+                suelta["precio"] = str(precio)
+        else:
+            nueva = {"clave": clave, "pos": p.clave if p else "", "cantidad": cantidad, "nivel": nivel}
+            if precio is not None:
+                nueva["precio"] = str(precio)
+            lineas.append(nueva)
         self.datos["lineas"] = lineas
         self.guardar()
+        return lineas.index(suelta) if suelta else len(lineas) - 1
+
+    def agregar_pedido(self, pedido):
+        """Lo que el cliente dejó sobre pedido, ya en anaquel, con el precio que se le dijo."""
+        self.session.pop("ticket_deshacer", None)
+        if any(ln.get("pedido") == pedido.pk for ln in self.datos["lineas"]):
+            return
+        self.datos["cliente"] = pedido.cliente_id
+        self.datos["lineas"].append({"clave": f"producto:{pedido.producto_id}", "pos": "", "cantidad": str(pedido.cantidad),
+                                     "nivel": "", "precio": str(pedido.precio), "pedido": pedido.pk})
+        self.guardar()
+
+    def indice(self, clave, pos=""):
+        return next((i for i, ln in enumerate(self.datos["lineas"]) if ln["clave"] == clave and ln["pos"] == (pos or "")),
+                    None)
 
     def quitar(self, i):
         if 0 <= i < len(self.datos["lineas"]):
@@ -253,9 +298,32 @@ class Ticket:
             self.datos["lineas"][i]["cantidad"] = str(cantidad)
             self.guardar()
 
-    def vaciar(self):
+    def cambiar_precio(self, i, precio):
+        """precio None regresa el renglón al precio de la lista."""
+        if 0 <= i < len(self.datos["lineas"]):
+            if precio is None:
+                self.datos["lineas"][i].pop("precio", None)
+            else:
+                self.datos["lineas"][i]["precio"] = str(precio)
+            self.guardar()
+
+    def clave_de(self, i):
+        return self.datos["lineas"][i]["clave"] if 0 <= i < len(self.datos["lineas"]) else None
+
+    def vaciar(self, deshacer=False):
+        """deshacer: guarda lo que había para poder regresarlo (cuando lo vacían a mano)."""
+        if deshacer and self.datos["lineas"]:
+            self.session["ticket_deshacer"] = self.datos["lineas"]
         self.datos["lineas"] = []
         self.guardar()
+
+    def deshacer_vaciar(self):
+        lineas = self.session.pop("ticket_deshacer", None)
+        if lineas and not self.datos["lineas"]:
+            self.datos["lineas"] = lineas
+            self.guardar()
+            return True
+        return False
 
     def lineas(self, veh=None):
         lista = self.cliente.lista_precio
@@ -271,11 +339,177 @@ class Ticket:
                 op = _de_producto(obj, lista, v, pos or POSICIONES[-1])
             else:
                 op = _de_partida(obj, v)
-            res.append(Linea(i, pos, obj, op, Decimal(ln["cantidad"]), ln.get("nivel", "")))
+            especial = Decimal(ln["precio"]) if ln.get("precio") else None
+            if especial is not None and especial == op.precio:
+                especial = None  # igual al de la lista: no es precio especial
+            res.append(Linea(i, pos, obj, op, Decimal(ln["cantidad"]), ln.get("nivel", ""), especial, ln.get("pedido")))
         return res
 
     def por_posicion(self):
         return {ln["pos"]: ln for ln in self.datos["lineas"] if ln["pos"]}
+
+
+def costo_de(obj):
+    """Costo sin IVA por unidad: el promedio de mi inventario o, si no hay, el del proveedor."""
+    if isinstance(obj, PartidaListaProveedor):
+        return obj.costo or Decimal(0)
+    if obj.costo_promedio:
+        return obj.costo_promedio
+    pp = obj.proveedores.order_by("-preferente", "costo").first()
+    return pp.costo if pp else Decimal(0)
+
+
+def abajo_del_costo(obj, precio):
+    """precio con IVA. True si al quitarle el IVA no alcanza a cubrir el costo."""
+    return precio / IVA < costo_de(obj)
+
+
+# ---------------------------------------------------------------------------------------------
+# Captura por código: SKU, número de parte, código de barras, código del proveedor o equivalencia
+# ---------------------------------------------------------------------------------------------
+
+_SEPARADORES = "[- ./]*"
+
+
+def _patron_codigo(texto):
+    """'ph-966b', 'PH 966B' y 'PH966B' son el mismo código: se comparan sin guiones, puntos ni espacios."""
+    limpio = re.sub(r"[^A-Z0-9]", "", (texto or "").upper())
+    if not limpio:
+        return None
+    return "^" + _SEPARADORES + _SEPARADORES.join(map(re.escape, limpio)) + _SEPARADORES + "$"
+
+
+@dataclass
+class Encontrado:
+    opcion: Opcion
+    nombre: str
+    por_equivalencia: bool = False
+
+
+def encontrado(obj, lista, equivalencia=False):
+    if isinstance(obj, Producto):
+        return Encontrado(_de_producto(obj, lista, Vehiculo(0, "", ""), POSICIONES[-1]), obj.nombre, equivalencia)
+    return Encontrado(_de_partida(obj, Vehiculo(0, "", "")), obj.descripcion, equivalencia)
+
+
+def buscar_codigo(texto, lista, limite=20):
+    """Lo que el de mostrador teclea o escanea. Devuelve (encontrados, directo): directo es True cuando
+    el código es exactamente de una sola pieza, y entonces va derecho al ticket. Si no, se muestran
+    para elegir: varias piezas con el mismo código, sus equivalencias o, si no hubo código exacto,
+    lo que contiene el texto en nombre, marca, código o aplicación («anticongelante», «filtro aire jetta»)."""
+    patron = _patron_codigo(texto)
+    if not patron:
+        return [], False
+    activos = Producto.objects.filter(activo=True).select_related("marca", "unidad_base")
+    partidas = PartidaListaProveedor.objects.select_related("proveedor", "producto")
+
+    vistos, exactos = set(), []
+
+    def sumar(obj, destino, equivalencia=False):
+        if isinstance(obj, PartidaListaProveedor) and obj.producto_id and obj.producto.activo:
+            obj = obj.producto  # la partida ya es producto mío: se vende de mi catálogo
+        llave = (type(obj).__name__, obj.pk)
+        if llave not in vistos:
+            vistos.add(llave)
+            destino.append(encontrado(obj, lista, equivalencia))
+
+    for p in activos.filter(Q(sku__iregex=patron) | Q(numero_parte__iregex=patron) | Q(codigo_barras__iregex=patron)):
+        sumar(p, exactos)
+    for p in partidas.filter(codigo__iregex=patron):
+        sumar(p, exactos)
+    if len(exactos) == 1:
+        return exactos, True
+
+    equivalentes = []
+    for p in activos.filter(grupo_equivalencia__referencias__numero_parte__iregex=patron).distinct():
+        sumar(p, equivalentes, True)
+    for p in partidas.filter(equivalencia__iregex=patron):
+        sumar(p, equivalentes, True)
+    encontrados = exactos + equivalentes
+    if encontrados:
+        return encontrados[:limite], False
+
+    # Sin código exacto: por texto, cada palabra en el nombre, la marca o el código
+    q_texto = _q_texto(texto)
+    if q_texto:
+        for p in activos.filter(q_texto[0]).order_by("nombre")[:limite]:
+            sumar(p, encontrados)
+        for p in _por_descripcion(partidas.filter(q_texto[1]), q_texto[2])[:limite]:
+            sumar(p, encontrados)
+    return encontrados[:limite], False
+
+
+def _q_texto(texto):
+    """Cada palabra debe estar en el nombre, la marca, el código o (en la lista del proveedor) la
+    aplicación: «filtro aire jetta» encuentra filtros de aire cuya aplicación dice Jetta."""
+    palabras = [w for w in (texto or "").split() if len(w) >= 2]
+    if not palabras:
+        return None
+    q_prod, q_part = Q(), Q()
+    for w in palabras:
+        q_prod &= Q(nombre__icontains=w) | Q(sku__icontains=w) | Q(numero_parte__icontains=w) | Q(marca__nombre__icontains=w)
+        q_part &= (Q(descripcion__icontains=w) | Q(codigo__icontains=w) | Q(marca__icontains=w)
+                   | Q(aplicacion__icontains=w))
+    return q_prod, q_part, palabras
+
+
+def _por_descripcion(partidas, palabras):
+    """Primero las partidas cuya descripción trae más de las palabras: «filtro aire jetta» pone los
+    FILTRO PARA AIRE antes que una válvula que el proveedor listó en la sección de filtros de aire."""
+    en_desc = sum((Case(When(descripcion__icontains=w, then=Value(1)), default=Value(0), output_field=IntegerField())
+                   for w in palabras), Value(0))
+    return partidas.annotate(_en_desc=en_desc).order_by("-_en_desc", "codigo")
+
+
+def sugerir(texto, lista, limite=8):
+    """Sugerencias mientras se teclea en el campo de código: primero el código exacto, luego los que
+    empiezan con lo escrito, luego los que lo contienen, luego equivalencias y al final por nombre, marca o aplicación.
+    Mis productos van antes que la lista del proveedor."""
+    limpio = re.sub(r"[^A-Z0-9]", "", (texto or "").upper())
+    if len(limpio) < 2:
+        return []
+    activos = Producto.objects.filter(activo=True).select_related("marca", "unidad_base")
+    partidas = PartidaListaProveedor.objects.select_related("proveedor", "producto")
+    vistos, res = set(), []
+
+    def sumar(objetos, equivalencia=False):
+        for obj in objetos:
+            if len(res) >= limite:
+                return
+            if isinstance(obj, PartidaListaProveedor) and obj.producto_id and obj.producto.activo:
+                obj = obj.producto
+            llave = (type(obj).__name__, obj.pk)
+            if llave not in vistos:
+                vistos.add(llave)
+                res.append(encontrado(obj, lista, equivalencia))
+
+    cuerpo = _SEPARADORES.join(map(re.escape, limpio))
+    exacto = "^" + _SEPARADORES + cuerpo + _SEPARADORES + "$"
+    for patron in (exacto, "^" + _SEPARADORES + cuerpo, cuerpo):  # el código exacto, empieza con, contiene
+        q = Q(sku__iregex=patron) | Q(numero_parte__iregex=patron) | Q(codigo_barras__iregex=patron)
+        sumar(activos.filter(q).order_by("sku")[:limite])
+        sumar(partidas.filter(codigo__iregex=patron).order_by("codigo")[:limite])
+    inicio = "^" + _SEPARADORES + cuerpo
+    sumar(activos.filter(grupo_equivalencia__referencias__numero_parte__iregex=inicio).distinct()[:limite], True)
+    sumar(partidas.filter(equivalencia__iregex=inicio).order_by("codigo")[:limite], True)
+    q_texto = _q_texto(texto)
+    if q_texto and len(res) < limite:
+        sumar(activos.filter(q_texto[0]).order_by("nombre")[:limite])
+        sumar(_por_descripcion(partidas.filter(q_texto[1]), q_texto[2])[:limite])
+    return res
+
+
+def leer_captura(texto, cantidad=None):
+    """'4*PH966B' o '4 x PH966B' → ('PH966B', 4). Si no trae cantidad, usa la del campo (o 1)."""
+    m = (re.match(r"^\s*(\d+(?:\.\d+)?)\s*\*\s*(\S.*)$", texto or "")
+         or re.match(r"^\s*(\d+(?:\.\d+)?)\s+[xX]\s+(\S.*)$", texto or ""))
+    if m:  # «15208X123» es un código, no 15208 piezas: la x necesita espacios
+        return m.group(2).strip(), Decimal(m.group(1))
+    try:
+        c = Decimal(str(cantidad).strip()) if cantidad not in (None, "") else Decimal(1)
+    except Exception:
+        c = Decimal(1)
+    return (texto or "").strip(), c if c > 0 else Decimal(1)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -315,35 +549,151 @@ def _producto_para_pedir(linea):
 
 
 @transaction.atomic
-def cobrar(ticket, turno, forma_pago, usuario, veh=None):
-    """Registra la venta de lo que hay en anaquel y una orden de compra de emergencia (borrador)
-    por lo que va sobre pedido. Lo sobre pedido no se cobra hoy: se cobra al entregarse.
+def descripcion(ln):
+    """Cómo se lee un renglón en papel: la pieza (o el nombre del producto) y la marca."""
+    nombre = ln.pos.nombre if ln.pos else (getattr(ln.objeto, "nombre", "") or getattr(ln.objeto, "descripcion", ""))[:60]
+    return " · ".join(x for x in [nombre, ln.opcion.marca] if x)
+
+
+@transaction.atomic
+def guardar_ticket(ticket, tipo, usuario, veh=None, base=None, nombre=""):
+    """Cotización (el ticket se queda como está) o ticket en espera (el ticket se vacía para atender a otro)."""
+    lineas = ticket.lineas(veh)
+    if not lineas:
+        raise ValidationError("El ticket está vacío.")
+    detalle = [{"i": ln.i, "codigo": ln.opcion.codigo, "descripcion": descripcion(ln), "cantidad": str(ln.cantidad),
+                "precio": str(ln.precio or 0), "importe": str(ln.importe), "pedido": ln.sobre_pedido} for ln in lineas]
+    g = TicketGuardado.objects.create(
+        tipo=tipo, usuario=usuario if usuario and usuario.pk else None, cliente=ticket.cliente, nombre=(nombre or "").strip()[:150],
+        vehiculo=str(veh) if veh else "", vehiculo_params={k: v for k, v in (base or {}).items() if v not in (None, "")},
+        lineas=[dict(ln) for ln in ticket.datos["lineas"]], detalle=detalle,
+        total=sum((ln.importe for ln in lineas), Decimal(0)),
+        pase=ticket.pase if tipo == TicketGuardado.Tipo.ESPERA else None)  # el turno se va con el ticket en espera
+    ultimo = (TicketGuardado.objects.filter(tipo=tipo, folio__isnull=False).exclude(pk=g.pk).order_by("-pk")
+              .values_list("folio", flat=True).first())
+    g.folio = f"{tipo}-{int(ultimo.split('-')[1]) + 1 if ultimo else 1:06d}"  # cada tipo con su propio consecutivo
+    g.save(update_fields=["folio"])
+    if tipo == TicketGuardado.Tipo.ESPERA:
+        ticket.datos["cliente"] = None  # el que sigue empieza como público en general
+        ticket.datos["pase"] = None
+        ticket.vaciar()
+    return g
+
+
+@transaction.atomic
+def retomar(ticket, g, usuario, veh=None, base=None):
+    """Pasa lo guardado al ticket. Si el ticket ya tenía piezas, esas se van a espera para no perderlas.
+    Una cotización vigente respeta los precios cotizados. Devuelve el ticket que quedó en espera, si hubo."""
+    g = TicketGuardado.objects.select_for_update().get(pk=g.pk)
+    if g.tipo == TicketGuardado.Tipo.ESPERA and g.retomado:
+        raise ValidationError(f"{g.folio} ya se retomó.")
+    apartado = guardar_ticket(ticket, TicketGuardado.Tipo.ESPERA, usuario, veh, base) if ticket.datos["lineas"] else None
+    lineas = [dict(ln) for ln in g.lineas]
+    if g.tipo == TicketGuardado.Tipo.COTIZACION and timezone.localdate() <= g.vence:
+        for d in g.detalle:
+            if 0 <= d["i"] < len(lineas) and Decimal(d["precio"]) > 0:
+                lineas[d["i"]]["precio"] = d["precio"]
+    ticket.session.pop("ticket_deshacer", None)
+    ticket.datos["cliente"] = g.cliente_id
+    ticket.datos["lineas"] = lineas
+    if g.tipo == TicketGuardado.Tipo.ESPERA:
+        ticket.datos["pase"] = g.pase_id
+    ticket.guardar()
+    g.retomado = timezone.now()
+    g.save(update_fields=["retomado"])
+    return apartado
+
+
+@transaction.atomic
+def mandar_a_caja(ticket, usuario, veh=None, contacto="", credito=False, nombre=""):
+    """El vendedor registra la venta de lo que hay en anaquel; no cobra. De contado queda por cobrar en caja con
+    el turno del cliente (el que se está atendiendo o, si llegó sin turno, el que sigue; nombre: cómo se llama,
+    para que la cajera lo reconozca). A crédito va directo a Por cobrar y no pasa por caja.
+    Lo sobre pedido no se cobra hoy: queda en una orden de compra de emergencia (borrador) y en Pedidos, para
+    avisarle al cliente (contacto: nombre o teléfono), y se cobra al entregarse.
     Devuelve (venta | None, [órdenes])."""
     lineas = ticket.lineas(veh)
     if not lineas:
         raise ValidationError("El ticket está vacío.")
+    for ln in lineas:
+        if ln.pedido and ln.sobre_pedido:  # ya se pidió una vez: no se vuelve a pedir
+            raise ValidationError(f"{ln.opcion.codigo} todavía no está completo en anaquel; quítalo del ticket "
+                                  "y entrégalo cuando llegue.")
     cliente = ticket.cliente
-    if forma_pago == FormaPago.CREDITO and cliente.dias_credito <= 0:
+    if credito and cliente.dias_credito <= 0:
         raise ValidationError(f"{cliente} no tiene crédito autorizado.")
     vender = [ln for ln in lineas if not ln.sobre_pedido]
     for ln in vender:
-        if ln.opcion.precio is None:
+        if ln.precio is None:
             raise ValidationError(f"{ln.opcion.codigo} no tiene precio en la lista {cliente.lista_precio}.")
+    pase = ticket.pase
+    nombre = " ".join((nombre or "").split())[:60]
     venta = None
     if vender:
-        venta = registrar_venta(turno, cliente, [{"producto": ln.objeto, "cantidad": ln.cantidad} for ln in vender],
-                                forma_pago, usuario)
+        if not credito and pase is None:
+            pase = dar_pase(nombre)
+        elif pase and nombre and not pase.nombre:
+            pase.nombre = nombre
+            pase.save(update_fields=["nombre"])
+        venta = registrar_para_caja(cliente, [{"producto": ln.objeto, "cantidad": ln.cantidad, "precio": ln.precio_especial}
+                                              for ln in vender], usuario, credito=credito, pase=pase)
+        # para la remisión: qué vehículo se atendió y qué quedó sobre pedido
+        venta.vehiculo = str(veh) if veh else ""
+        venta.pedido = [{"codigo": ln.opcion.codigo, "descripcion": descripcion(ln),
+                         "cantidad": str(ln.cantidad), "precio": str(ln.precio or 0), "importe": str(ln.importe)}
+                        for ln in lineas if ln.sobre_pedido]
+        venta.save(update_fields=["vehiculo", "pedido"])
     ordenes = []
     for ln in (ln for ln in lineas if ln.sobre_pedido):
         producto, proveedor, costo = _producto_para_pedir(ln)
         oc = _orden_emergencia(proveedor, usuario)
-        OrdenCompraLinea.objects.create(orden=oc, producto=producto, unidad=producto.unidad_base,
-                                        cantidad=ln.cantidad, costo_unitario=costo or 0)
+        linea_oc = OrdenCompraLinea.objects.create(orden=oc, producto=producto, unidad=producto.unidad_base,
+                                                   cantidad=ln.cantidad, costo_unitario=costo or 0)
+        PedidoCliente.objects.create(usuario=usuario if usuario and usuario.pk else None, cliente=cliente,
+                                     contacto=(contacto or "").strip()[:120], venta=venta, vehiculo=str(veh) if veh else "",
+                                     producto=producto, linea_oc=linea_oc, codigo=ln.opcion.codigo,
+                                     descripcion=descripcion(ln)[:200], cantidad=ln.cantidad, precio=ln.precio or 0)
         nota = f"Mostrador: {cliente}" + (f" · {veh}" if veh else "") + (f" · {venta.folio}" if venta else "")
         if nota not in oc.notas:
             oc.notas = (oc.notas + "\n" + nota).strip()
             oc.save(update_fields=["notas"])
         if oc not in ordenes:
             ordenes.append(oc)
+    entregados = [ln.pedido for ln in vender if ln.pedido]
+    if venta and entregados:
+        PedidoCliente.objects.filter(pk__in=entregados, estado=PedidoCliente.Estado.PEDIDO).update(
+            estado=PedidoCliente.Estado.ENTREGADO, cerrado=timezone.now(), venta_entrega=venta)
+    if pase and not venta:  # solo dejó un pedido: su turno ya se atendió y no pasa a caja
+        pase.cerrado = timezone.now()
+        pase.save(update_fields=["cerrado"])
+    ticket.datos["cliente"] = None  # el siguiente cliente empieza como público en general, sin crédito
+    ticket.datos["pase"] = None
     ticket.vaciar()
     return venta, ordenes
+
+
+@transaction.atomic
+def cancelar_pedido(pedido):
+    """Si su orden de compra sigue en borrador, se le quita esa cantidad (o el renglón completo).
+    Devuelve la orden que ya se había enviado, para avisarle al proveedor, o None."""
+    pedido = PedidoCliente.objects.select_for_update().get(pk=pedido.pk)
+    if pedido.estado != PedidoCliente.Estado.PEDIDO:
+        raise ValidationError("Ese pedido ya no está pendiente.")
+    enviada = None
+    lin = pedido.linea_oc
+    if lin:
+        orden = lin.orden
+        if orden.estado == OrdenCompra.Estado.BORRADOR:
+            if lin.cantidad <= pedido.cantidad:
+                pedido.linea_oc = None
+                lin.delete()
+                if not orden.lineas.exists():  # borrador que solo era para esto
+                    orden.delete()
+            else:
+                lin.cantidad -= pedido.cantidad
+                lin.save(update_fields=["cantidad"])
+        elif orden.estado != OrdenCompra.Estado.CANCELADA:
+            enviada = orden
+    pedido.estado, pedido.cerrado = PedidoCliente.Estado.CANCELADO, timezone.now()
+    pedido.save(update_fields=["estado", "cerrado", "linea_oc"])
+    return enviada

@@ -1,24 +1,19 @@
-# Publicación de prueba en Render (plan gratis). En Render: New > Blueprint > este repositorio.
-databases:
-  - name: erp-db
-    plan: free
-    databaseName: erp
-    user: erp
-
+# Publicación en Render. En Render: New > Blueprint > este repositorio.
+# La base PostgreSQL va aparte, en Neon (plan gratis que no vence): su cadena de conexión se pega en DATABASE_URL.
+# Sin «plan»: el plan (gratis o de pago) se cambia en el panel de Render y este archivo no lo regresa al publicar.
+# En un Blueprint nuevo Render pone su plan de pago más chico. Sin «region» queda en Oregon: la base de Neon va en
+# AWS US West 2 (Oregon) para que estén cerca.
 services:
   - type: web
     name: erp-refaccionaria
     runtime: python
-    plan: free
     buildCommand: ./build.sh
     startCommand: gunicorn config.wsgi:application
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.7
       - key: DATABASE_URL
-        fromDatabase:
-          name: erp-db
-          property: connectionString
+        sync: false
       - key: DJANGO_SECRET_KEY
         generateValue: true
       - key: DJANGO_DEBUG

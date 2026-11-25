@@ -3,22 +3,78 @@
   <header class="ticket-cabeza">
     <h2>Ticket</h2>
     <span>{% now "j/m/Y H:i" %}</span>
+    {% if lineas %}
+    <form method="post" action="{% url 'ticket_vaciar' %}" class="ticket-vaciar">{% csrf_token %}
+      <input type="hidden" name="next" value="{{ aqui }}">
+      <button type="submit">Vaciar ticket</button>
+    </form>
+    {% endif %}
   </header>
-  <form method="post" action="{% url 'ticket_cliente' %}" class="ticket-cliente">{% csrf_token %}
-    <input type="hidden" name="next" value="{{ aqui }}">
-    <label for="cliente">Cliente <small>lista {{ cliente.lista_precio }}</small></label>
-    <select id="cliente" name="cliente" onchange="this.form.submit()">
-      {% for c in clientes %}<option value="{{ c.pk }}"{% if c.pk == cliente.pk %} selected{% endif %}>{{ c }}{% if c.dias_credito %} · crédito {{ c.dias_credito }} días{% endif %}</option>{% endfor %}
-    </select>
-    <noscript><button class="btn-sec" type="submit">Cambiar</button></noscript>
-  </form>
+  <p class="ticket-para">{% if pase %}<span class="ticket-turno">Turno {{ pase.numero }}</span> {% endif %}Para <b>{{ cliente }}</b> <span class="mono">{{ cliente.folio }}</span>
+    <a href="#cliente-q" data-enfocar="cliente-q">Cambiar</a></p>
 
-  {% if not lineas %}<p class="ticket-vacio">Todavía no hay piezas. Toca una opción o «Llevar completa» en una afinación.</p>{% endif %}
-  {% for ln in lineas %}{% if not ln.sobre_pedido %}{% include "ventas/_renglon.html" %}{% endif %}{% endfor %}
+  {% if en_espera %}
+  <div class="espera" aria-label="Tickets en espera">
+    <span class="espera-titulo">En espera · toca uno para retomarlo</span>
+    {% for g in en_espera %}
+    <div class="espera-item">
+      <form method="post" action="{% url 'ticket_retomar' g.folio %}" data-recargar>{% csrf_token %}
+        <input type="hidden" name="next" value="{{ aqui }}">
+        {% for k, v in base.items %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+        <button type="submit" class="espera-retomar"><b>{{ g.para }}</b><span>{% if g.vehiculo %}{{ g.vehiculo }} · {% endif %}{{ g.total|pesos }} · {{ g.fecha|date:"H:i" }}</span></button>
+      </form>
+      <details class="espera-quitar">
+        <summary aria-label="Descartar el ticket de {{ g.para }}" title="Descartar">✕</summary>
+        <form method="post" action="{% url 'ticket_descartar' g.folio %}">{% csrf_token %}
+          <input type="hidden" name="next" value="{{ aqui }}">
+          <button type="submit">Descartar</button>
+        </form>
+      </details>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if puede_deshacer %}
+  <form method="post" action="{% url 'ticket_deshacer' %}" class="ticket-deshacer">{% csrf_token %}
+    <input type="hidden" name="next" value="{{ aqui }}">
+    <span>Vaciaste el ticket.</span> <button type="submit">Deshacer</button>
+  </form>
+  {% endif %}
+  {% if not lineas %}<p class="ticket-vacio">Todavía no hay piezas. Teclea un código arriba, toca una opción o «Llevar completa» en una afinación.</p>
+  {% else %}<p class="ticket-orden">Lo último que agregas sale arriba</p>
+  <div class="ticket-columnas" aria-hidden="true"><span>Código</span><span>Descripción</span><span>Cantidad y precio c/u con IVA</span><span>Importe</span></div>{% endif %}
+  <div class="ticket-lineas">
+  {% for ln in lineas reversed %}{% if not ln.sobre_pedido %}{% include "ventas/_renglon.html" %}{% endif %}{% endfor %}
 
   {% if pedido_total %}
     <h3 class="ticket-pedido">Sobre pedido · se cobra al entregar</h3>
-    {% for ln in lineas %}{% if ln.sobre_pedido %}{% include "ventas/_renglon.html" %}{% endif %}{% endfor %}
-    <p class="ticket-nota">Al cobrar queda la orden al proveedor en borrador.</p>
+    {% for ln in lineas reversed %}{% if ln.sobre_pedido %}{% include "ventas/_renglon.html" %}{% endif %}{% endfor %}
+    <label class="ticket-contacto">Para avisarle cuando llegue
+      <input name="contacto" form="cobro-form" maxlength="120" autocomplete="off" value="{{ cliente.telefono }}" placeholder="Nombre y teléfono">
+    </label>
+    <p class="ticket-nota">Al registrar la venta se pide al proveedor y queda en Pedidos para avisarle.</p>
+  {% endif %}
+  </div>
+  {% if lineas %}
+  <div class="ticket-acciones">
+    <form method="post" action="{% url 'ticket_espera' %}" data-recargar>{% csrf_token %}
+      <input type="hidden" name="next" value="{{ aqui }}">
+      {% for k, v in base.items %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+      <button class="btn-sec" type="submit">Poner en espera</button>
+    </form>
+    <details class="cotizar">
+      <summary class="btn-sec">Cotizar</summary>
+      <form method="post" action="{% url 'ticket_cotizar' %}" target="_blank" data-recargar data-mandar-form>{% csrf_token %}
+        <input type="hidden" name="next" value="{{ aqui }}">
+        {% for k, v in base.items %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+        <label>A nombre de <small>opcional</small> <input name="nombre" maxlength="150" autocomplete="off" placeholder="{{ cliente }}"></label>
+        <span class="cotizar-botones">
+          <button class="btn-sec" type="submit" name="luego" value="imprimir">Imprimir</button>
+          <button class="btn-sec" type="submit" name="luego" value="enviar" formtarget="_self">Mandar por WhatsApp o correo</button>
+        </span>
+      </form>
+    </details>
+  </div>
   {% endif %}
 </aside>

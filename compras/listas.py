@@ -16,8 +16,12 @@ ENCABEZADOS = {"código": "codigo", "codigo": "codigo", "tipo": "tipo", "descrip
                "aplicacion": "aplicacion", "precio morsa": "costo", "precio": "costo", "costo": "costo",
                "equivalencias": "equivalencia", "equivalencia": "equivalencia"}
 TIPOS = {"aceite": "ACEITE", "aire": "AIRE", "gasolina": "GASOLINA"}
+# (25-nov-2026) empaques y clutch: la columna Tipo trae el nombre tal cual ("Juego de empaques")
+TIPOS.update({t.label.lower(): t.value for t in PartidaListaProveedor.Tipo
+              if t.value not in TIPOS.values() and t.value != "OTRO"})
 FAMILIAS = {"ACEITE": "Filtros de aceite", "AIRE": "Filtros de aire", "GASOLINA": "Filtros de gasolina",
             "OTRO": "Otros filtros"}
+FAMILIAS.update({t.value: t.label for t in PartidaListaProveedor.Tipo if t.value not in FAMILIAS})
 
 
 def _texto(v):

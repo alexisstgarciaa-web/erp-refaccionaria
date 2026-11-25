@@ -1,0 +1,43 @@
+{# Ventana para mandar la cotización o la remisión en PDF. La abre mandar.js encima de la página: no se sale de ella. #}
+<div class="mandar" data-pdf="{{ pdf_url }}" data-archivo="{{ d.archivo }}" data-texto="{{ d.texto }}" data-asunto="{{ asunto }}"
+     data-cuerpo="{{ cuerpo }}" data-numero="{{ numero }}" data-correo="{{ correo }}">
+  <header class="mandar-cabeza">
+    <div>
+      <span class="mandar-tipo">Mandar {{ d.titulo|lower }}</span>
+      <h2 id="mandar-titulo">{{ d.folio }}</h2>
+      <p>Para <b>{{ d.para }}</b></p>
+    </div>
+    <button type="button" class="mandar-cerrar" data-cerrar aria-label="Cerrar">×</button>
+  </header>
+
+  <div class="mandar-pdf">
+    <span class="mandar-pdf-icono" aria-hidden="true">PDF</span>
+    <span class="mandar-pdf-nombre">{{ d.archivo }}<small data-pdf-estado role="status">Preparando el PDF…</small></span>
+    <a class="mandar-enlace" href="{{ pdf_url }}?descargar=1" download="{{ d.archivo }}" data-descargar>Descargar</a>
+  </div>
+
+  <section class="mandar-medio" aria-labelledby="mandar-wa">
+    <h3 id="mandar-wa">WhatsApp</h3>
+    <p class="mandar-dato">{% if telefono %}Celular: <b>{{ telefono }}</b>{% if not numero %} <span class="rojo">(le faltan dígitos)</span>{% endif %}{% else %}Sin celular registrado{% endif %}</p>
+    <button type="button" class="btn-primario" data-medio="whatsapp" disabled>Mandar el PDF por WhatsApp</button>
+    <p class="mandar-nota" data-nota="whatsapp" role="status">Se abre el menú de compartir con el PDF ya adjunto: elige WhatsApp y el contacto.</p>
+    {% if numero %}<a class="mandar-enlace" href="whatsapp://send?phone={{ numero }}" data-chat>Abrir antes el chat de {{ telefono }}</a>{% endif %}
+  </section>
+
+  <section class="mandar-medio" aria-labelledby="mandar-correo-titulo">
+    <h3 id="mandar-correo-titulo">Correo</h3>
+    {% if correo_servidor %}
+    <form class="mandar-correo" method="post" action="{{ correo_url }}" data-correo-servidor>{% csrf_token %}
+      <input id="mandar-correo" type="email" name="correo" value="{{ correo }}" required placeholder="cliente@correo.com"
+             autocomplete="off" aria-label="Correo del cliente">
+      <button class="btn-sec" type="submit">Mandar por correo</button>
+      {% if not d.publico %}<label class="mandar-guardar"><input type="checkbox" name="guardar" value="1"{% if not correo %} checked{% endif %}> Guardar este correo en el cliente</label>{% endif %}
+    </form>
+    <p class="mandar-nota" data-nota="correo" role="status">Sale de {{ remitente }} con el PDF adjunto.</p>
+    {% else %}
+    <p class="mandar-dato">{% if correo %}Correo: <b>{{ correo }}</b>{% else %}Sin correo registrado{% endif %}</p>
+    <button type="button" class="btn-sec" data-medio="correo" disabled>Abrir mi correo con el PDF</button>
+    <p class="mandar-nota" data-nota="correo" role="status">Se abre el menú de compartir con el PDF: elige tu programa de correo.{% if correo %} El correo del cliente queda copiado para pegarlo en «Para».{% endif %}</p>
+    {% endif %}
+  </section>
+</div>

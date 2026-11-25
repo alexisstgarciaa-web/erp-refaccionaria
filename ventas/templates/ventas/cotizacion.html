@@ -1,0 +1,87 @@
+{% load static erp %}<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{% if publica %}<meta name="robots" content="noindex, nofollow">{% endif %}
+<title>Cotización {{ g.folio }} · {{ negocio }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,400..900;1,62..125,400..900&family=Geist+Mono:wght@400..600&display=swap">
+<link rel="stylesheet" href="{% static 'ventas/erp.css' %}">
+<style>@page { size: {% if formato == 'ticket' %}80mm auto; margin: 3mm{% else %}letter; margin: 12mm{% endif %}; }</style>
+<link rel="icon" href="{% url 'icono' %}" type="image/svg+xml">
+</head>
+<body class="doc doc-{{ formato }}">
+<nav class="doc-herramientas" aria-label="Cotización">
+  <button class="btn-primario" type="button" onclick="window.print()">{% if publica %}Imprimir o guardar PDF{% else %}Imprimir{% endif %}</button>
+  {% if not publica %}
+  <span class="doc-formatos">
+    <a href="?formato=carta"{% if formato == 'carta' %} aria-current="true"{% endif %}>Hoja carta</a>
+    <a href="?formato=ticket"{% if formato == 'ticket' %} aria-current="true"{% endif %}>Ticket 80 mm</a>
+  </span>
+  <button class="btn-sec" type="button" data-mandar="{% url 'mandar' 'cotizacion' g.folio %}">Mandar por WhatsApp o correo</button>
+  <a href="{% url 'mostrador' %}">Volver al mostrador</a>
+  {% endif %}
+</nav>
+
+
+<article class="remision cotizacion">
+  <header class="rem-cabeza">
+    <div class="rem-negocio">
+      <span class="sello-negocio" aria-hidden="true">{{ negocio|slice:":1" }}</span>
+      <div>
+        <b>{{ negocio }}</b>
+        <span>Afinación · lubricantes · químicos</span>
+        {% if rfc %}<span>RFC {{ rfc }}</span>{% endif %}
+        {% if direccion %}<span>{{ direccion }}</span>{% endif %}
+        {% if telefono %}<span>Tel. {{ telefono }}</span>{% endif %}
+      </div>
+    </div>
+    <div class="rem-folio">
+      <h1>Cotización</h1>
+      <b>{{ g.folio }}</b>
+      <span>{{ g.fecha|date:"j M Y, H:i" }}</span>
+    </div>
+  </header>
+
+  <dl class="rem-datos">
+    <div><dt>Para</dt><dd>{{ g.para }}{% if g.nombre and g.cliente.nombre != "Público en general" %} · {{ g.cliente }}{% endif %}{% if g.cliente.telefono %} · Tel. {{ g.cliente.telefono }}{% endif %}{% if g.cliente and not g.cliente.rfc_generico %} · RFC {{ g.cliente.rfc }}{% endif %}{% for renglon in g.cliente.domicilio %}<span class="rem-domicilio">{{ renglon }}</span>{% endfor %}</dd></div>
+    {% if g.vehiculo %}<div><dt>Vehículo</dt><dd>{{ g.vehiculo }}</dd></div>{% endif %}
+    <div><dt>Vigencia</dt><dd>Precios válidos hasta el {{ g.vence|date:"j \d\e F \d\e Y" }}{% if not vigente %} · <b>vencida</b>{% endif %}</dd></div>
+    <div><dt>Atendió</dt><dd>{{ g.usuario.get_short_name|default:g.usuario.get_username|default:"—" }}</dd></div>
+  </dl>
+
+  <table class="rem-tabla">
+    <thead><tr><th class="num">Cant.</th><th>Código</th><th>Descripción</th><th class="num">P. unitario</th><th class="num">Importe</th></tr></thead>
+    <tbody>
+      {% for d in lineas %}
+      <tr>
+        <td class="num">{{ d.cantidad|cant }}</td>
+        <td class="rem-codigo">{{ d.codigo }}</td>
+        <td>{{ d.descripcion }}{% if d.pedido %} <small class="rem-sobre-pedido">sobre pedido</small>{% endif %}</td>
+        <td class="num">{{ d.precio|pesos }}</td>
+        <td class="num">{{ d.importe|pesos }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="rem-pie">
+    <div class="rem-notas">
+      {% if hay_pedido %}<p>Lo marcado <b>sobre pedido</b> no está en anaquel: se pide al proveedor al confirmar y se cobra al entregar.</p>{% endif %}
+      <p>Precios con IVA incluido, sujetos a existencia. Vigencia de {{ dias }} día{{ dias|pluralize }}.</p>
+    </div>
+    <table class="rem-totales">
+      <tr><th>Subtotal</th><td>{{ subtotal|pesos }}</td></tr>
+      <tr><th>IVA 16%</th><td>{{ iva|pesos }}</td></tr>
+      <tr class="rem-total"><th>Total</th><td>{{ g.total|pesos }}</td></tr>
+    </table>
+  </div>
+  <p class="rem-leyenda">Cotización, no es comprobante de venta ni fiscal.</p>
+</article>
+{% if not publica %}{% if abrir_mandar %}<span hidden data-mandar-abrir="{% url 'mandar' 'cotizacion' g.folio %}"></span>{% endif %}
+<script src="{% static 'ventas/mandar.js' %}" defer></script>{% endif %}
+{% if imprimir and not publica %}<script>window.addEventListener("load", () => setTimeout(() => window.print(), 300));</script>{% endif %}
+</body>
+</html>
