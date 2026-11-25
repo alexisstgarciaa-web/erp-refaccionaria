@@ -10,7 +10,7 @@
     </form>
     {% endif %}
   </header>
-  <p class="ticket-para">Para <b>{{ cliente }}</b> <span class="mono">{{ cliente.folio }}</span>
+  <p class="ticket-para">{% if pase %}<span class="ticket-turno">Turno {{ pase.numero }}</span> {% endif %}Para <b>{{ cliente }}</b> <span class="mono">{{ cliente.folio }}</span>
     <a href="#cliente-q" data-enfocar="cliente-q">Cambiar</a></p>
 
   {% if en_espera %}
@@ -53,7 +53,7 @@
     <label class="ticket-contacto">Para avisarle cuando llegue
       <input name="contacto" form="cobro-form" maxlength="120" autocomplete="off" value="{{ cliente.telefono }}" placeholder="Nombre y teléfono">
     </label>
-    <p class="ticket-nota">Al cobrar se pide al proveedor y queda en Pedidos para avisarle.</p>
+    <p class="ticket-nota">Al registrar la venta se pide al proveedor y queda en Pedidos para avisarle.</p>
   {% endif %}
   </div>
   {% if lineas %}

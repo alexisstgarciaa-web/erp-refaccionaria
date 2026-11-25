@@ -1,0 +1,41 @@
+{% load erp %}{# Lo que la caja tiene por cobrar, un renglón por turno de cliente. Recibe cuentas, formas y turno (la caja abierta). #}
+<p class="por-cobrar-cuenta" data-cuenta="{{ cuentas|length }}">{% if cuentas %}{{ cuentas|length }} por cobrar{% else %}Nada por cobrar. Lo que manden los vendedores aparece aquí solo.{% endif %}</p>
+<ul class="cuentas">
+  {% for c in cuentas %}
+  <li class="cuenta" data-clave="{{ c.clave }}" data-busca="{{ c.busca }}"{% if c.pase %} data-turno="{{ c.pase.numero }}"{% endif %}>
+    <details>
+      <summary>
+        <span class="cuenta-turno">{% if c.pase %}<small>Turno</small><b>{{ c.pase.numero }}</b>{% else %}<small>Sin turno</small><b>—</b>{% endif %}</span>
+        <span class="cuenta-quien"><b>{{ c.nombre }}</b>
+          <small>{% if c.vendedores %}Atendió {{ c.vendedores }} · {% endif %}{{ c.ventas|length }} remisi{{ c.ventas|length|pluralize:"ón,ones" }} · {% if c.de_otro_dia %}del {{ c.pase.dia|date:"j M" }}{% else %}espera desde las {{ c.desde|date:"H:i" }}{% endif %}</small></span>
+        <b class="cuenta-total">{{ c.total|pesos }}</b>
+      </summary>
+      <div class="cuenta-detalle">
+        <table class="tabla cuenta-ventas">
+          {% for v in c.ventas %}
+          <tr>
+            <td><a class="folio" href="{% url 'venta' v.folio %}">{{ v.folio }}</a></td>
+            <td>{% for ln in v.lineas.all %}{{ ln.cantidad|cant }} × {{ ln.producto.numero_parte|default:ln.producto.sku }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
+            <td class="num">{{ v.total|pesos }}</td>
+          </tr>
+          {% endfor %}
+        </table>
+        {% if turno %}
+        <form method="post" action="{% url 'caja_cobrar' %}" class="cobrar-rem" data-nip="vendedor"
+              data-nip-para="Cobrar {% if c.pase %}el turno {{ c.pase.numero }}{% else %}{{ c.ventas.0.folio }}{% endif %} · {{ c.total|pesos }}" data-total="{{ c.total|stringformat:'.2f' }}">{% csrf_token %}
+          {% for v in c.ventas %}<input type="hidden" name="folio" value="{{ v.folio }}">{% endfor %}
+          <div class="pagos abono-pagos" role="radiogroup" aria-label="Cómo paga">
+            {% for valor, nombre in formas %}
+            <label><input type="radio" name="forma_pago" value="{{ valor }}"{% if forloop.first %} checked{% endif %}><span>{{ nombre }}</span></label>
+            {% endfor %}
+          </div>
+          <label class="campo cobrar-rem-paga">Paga con <span class="con-signo"><input name="paga_con" inputmode="decimal" data-cifra="pesos" autocomplete="off" placeholder="{{ c.total|miles }}"></span>
+            <small class="cobrar-rem-cambio" aria-live="polite"></small></label>
+          <button class="btn" type="submit">Cobrar {{ c.total|pesos }}</button>
+        </form>
+        {% else %}<p class="tenue">Abre la caja para cobrar.</p>{% endif %}
+      </div>
+    </details>
+  </li>
+  {% endfor %}
+</ul>

@@ -344,51 +344,25 @@ vigilarTicket();
   });
 })();
 
-// Cobro: «Paga con» y cambio en efectivo, y F9 para cobrar desde cualquier parte.
-// La barra se reemplaza cuando cambia el ticket, por eso todo se escucha desde el documento.
+// Mandar a caja: el vendedor no cobra. F9 registra la venta desde cualquier parte (pide el NIP) y, si el cliente
+// tiene crédito, el botón dice si va a caja o a crédito. La barra se reemplaza cuando cambia el ticket, por eso
+// todo se escucha desde el documento.
 (() => {
   const forma = () => document.querySelector("form.cobro-accion");
-  const num = (t) => parseFloat(String(t).replace(/[$,\s]/g, ""));
-  const pesos = (n) => "$" + n.toLocaleString("es-MX", { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 });
-  const efectivo = (f) => !!f.querySelector('input[name=forma_pago][value=EFECTIVO]:checked');
-  const revisar = () => { // devuelve false si lo que paga no alcanza
-    const f = forma(), paga = f && f.querySelector("#paga-con"), letrero = f && f.querySelector("#cambio");
-    if (!paga || !letrero) return true;
-    const total = num(f.dataset.total), recibe = num(paga.value);
-    letrero.className = "";
-    if (!paga.value.trim() || Number.isNaN(recibe)) { letrero.textContent = ""; return true; }
-    if (recibe < total) { letrero.textContent = `Faltan ${pesos(total - recibe)}`; letrero.className = "faltan"; return false; }
-    letrero.textContent = `Cambio ${pesos(Math.round((recibe - total) * 100) / 100)}`;
-    return true;
+  const rotular = () => {
+    const f = forma(), que = f && f.querySelector(".cobrar-que"), boton = f && f.querySelector(".cobrar");
+    if (!que) return;
+    const credito = !!f.querySelector('input[name=condiciones][value=CREDITO]:checked');
+    que.textContent = credito ? boton.dataset.credito : boton.dataset.contado;
   };
-  document.addEventListener("input", (e) => { if (e.target.id === "paga-con") revisar(); });
-  document.addEventListener("change", (e) => {
-    if (e.target.name !== "forma_pago") return;
-    const f = forma(), caja = f && f.querySelector(".paga-con");
-    if (caja) caja.hidden = !efectivo(f);
-  });
-  document.addEventListener("submit", (e) => {
-    const f = e.target;
-    if (!f.matches || !f.matches("form.cobro-accion") || !efectivo(f)) return;
-    if (!revisar()) { e.preventDefault(); f.querySelector("#paga-con").focus(); }
-  });
+  document.addEventListener("change", (e) => { if (e.target.name === "condiciones") rotular(); });
   document.addEventListener("keydown", (e) => {
     if (e.key !== "F9" || document.querySelector("dialog[open]")) return;
     const f = forma();
     if (!f) return;
     e.preventDefault();
     const boton = f.querySelector(".cobrar");
-    if (!boton) return;
-    if (boton.tagName === "A") { boton.click(); return; } // caja cerrada: ir a abrirla
-    if (boton.disabled) return;
-    const paga = f.querySelector("#paga-con");
-    // en efectivo, el primer F9 pide con cuánto paga; Enter (o F9 otra vez) cobra
-    if (efectivo(f) && paga && !paga.closest(".paga-con").hidden && document.activeElement !== paga) {
-      paga.focus();
-      paga.select();
-      return;
-    }
-    if (!revisar()) return;
+    if (!boton || boton.disabled) return;
     f.requestSubmit ? f.requestSubmit(boton) : f.submit();
   });
 })();

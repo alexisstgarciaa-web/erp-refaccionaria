@@ -15,6 +15,7 @@ from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.urls import reverse
+from django.utils.crypto import constant_time_compare
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
@@ -29,11 +30,12 @@ from . import pdf
 from . import mostrador as m
 from . import nip as nips
 from . import remisiones as rem
-from .models import (RFC_GENERICO, Cliente, CodigoPostal, Devolucion, FormaPago, PedidoCliente, RemisionBorrador,
-                     TicketGuardado, Turno, Venta, rfc_valido)
-from .servicios import (abrir_turno, cancelar_venta, cerrar_turno, cobrar_remision, disponible_para_devolver,
-                        emitir_remision, esperado_en_caja, por_que_no_cancelar, precio_de, registrar_abono,
-                        registrar_devolucion)
+from . import turnos
+from .models import (RFC_GENERICO, Cliente, CodigoPostal, Devolucion, FormaPago, Pase, PedidoCliente,
+                     RemisionBorrador, TicketGuardado, Turno, Venta, rfc_valido)
+from .servicios import (abrir_turno, cancelar_venta, cerrar_turno, cobrar_en_caja, cobrar_remision,
+                        disponible_para_devolver, emitir_remision, esperado_en_caja, pase_de_hoy, por_que_no_cancelar,
+                        precio_de, registrar_abono, registrar_devolucion)
 from .templatetags.erp import cant, miles, pesos
 
 logger = logging.getLogger(__name__)
@@ -49,10 +51,11 @@ def _volver(request, defecto="mostrador"):
 CAMPO = {FormaPago.EFECTIVO: "efectivo", FormaPago.TARJETA: "tarjeta", FormaPago.TRANSFERENCIA: "transferencia"}
 
 
-def _autoriza(request, admin=False):
-    """Quién tecleó el NIP del formulario (campo «nip»). Si falta o no alcanza, None y el aviso."""
+def _autoriza(request, admin=False, cobra=False):
+    """Quién tecleó el NIP del formulario (campo «nip»). Si falta o no alcanza, None y el aviso.
+    cobra: tiene que ser alguien que pueda cobrar en caja."""
     try:
-        return nips.quien(request.session, request.POST.get("nip"), admin=admin)
+        return nips.quien(request.session, request.POST.get("nip"), admin=admin, cobra=cobra)
     except ValidationError as e:
         messages.error(request, " ".join(e.messages))
         return None
@@ -161,7 +164,8 @@ def mostrador(request):
     ctx["piezas"] = sum((ln.cantidad for ln in vender), Decimal(0))
     ctx["pedido_total"] = sum((ln.importe for ln in lineas if ln.sobre_pedido), Decimal(0))
     ctx["pedido_n"] = sum(1 for ln in lineas if ln.sobre_pedido)
-    ctx["pagos"] = [fp for fp in FormaPago if fp != FormaPago.CREDITO or ticket.cliente.dias_credito > 0]
+    ctx["pase"] = ticket.pase  # el turno del cliente que se está atendiendo
+    ctx["tira"] = turnos.de_hoy()
     if ticket.cliente.dias_credito:
         ctx["cliente_saldo"], ctx["cliente_disponible"], ctx["cliente_vencido"] = cli.credito(ticket.cliente)
     ctx["aqui"] = _sin(request.get_full_path(), "codigo", "cantidad", "precio")
@@ -178,8 +182,7 @@ def mostrador(request):
     ctx["recien_tipo"] = request.session.pop("recien_tipo", "Agregado")
     ctx["agregado"] = request.session.pop("agregado", None)
     folio = request.session.pop("ultima_venta", None)
-    ctx["ultima_venta"] = Venta.objects.filter(folio=folio).first() if folio else None
-    ctx["ultimo_pago"] = request.session.pop("ultimo_pago", None)
+    ctx["ultima_venta"] = Venta.objects.select_related("cliente", "pase").filter(folio=folio).first() if folio else None
     ctx["mandar"] = request.session.pop("mandar", None)
     ctx["puede_deshacer"] = bool(request.session.get("ticket_deshacer")) and not lineas
     ctx["listas_precio"] = ListaPrecio.objects.order_by("nombre")
@@ -527,37 +530,30 @@ def _elegido_en(request, ticket, cliente):
 
 @login_required
 @require_POST
-def cobrar(request):
-    turno = _turno(request.user)
-    if not turno:
-        messages.error(request, "Abre la caja antes de cobrar.")
-        return redirect("caja")
+def a_caja(request):
+    """El vendedor registra la venta con su NIP y no cobra: de contado pasa a caja con el turno del cliente; a
+    crédito queda en Por cobrar. Lo sobre pedido se pide al proveedor y se cobra al entregarse."""
     ticket = m.Ticket(request.session)
-    forma = request.POST.get("forma_pago", FormaPago.EFECTIVO)
+    credito = request.POST.get("condiciones") == "CREDITO"
     # a crédito, a quien debe algo vencido, lo autoriza un administrador
-    vencido = cli.vencido(ticket.cliente) if forma == FormaPago.CREDITO else 0
+    vencido = cli.vencido(ticket.cliente) if credito else 0
     vendedor = _autoriza(request, admin=bool(vencido))
     if not vendedor:
         return _volver(request)
     veh, _ = _vehiculo_post(request.POST)
-    # efectivo: con cuánto paga, para dar el cambio (opcional)
-    paga_con = _decimal(request.POST.get("paga_con")) if forma == FormaPago.EFECTIVO else None
-    if paga_con is not None:
-        por_cobrar = sum((ln.importe for ln in ticket.lineas(veh) if not ln.sobre_pedido), Decimal(0))
-        if paga_con < por_cobrar:
-            messages.error(request, f"Paga con {pesos(paga_con)} y son {pesos(por_cobrar)}: faltan {pesos(por_cobrar - paga_con)}.")
-            return _volver(request)
     try:
-        venta, ordenes = m.cobrar(ticket, turno, forma, vendedor, veh, contacto=request.POST.get("contacto", ""))
+        venta, ordenes = m.mandar_a_caja(ticket, vendedor, veh, contacto=request.POST.get("contacto", ""),
+                                         credito=credito, nombre=request.POST.get("nombre", ""))
     except ValidationError as e:
         messages.error(request, " ".join(e.messages))
         return _volver(request)
     partes = []
     if venta:
         request.session["ultima_venta"] = venta.folio
-        if paga_con is not None:
-            request.session["ultimo_pago"] = {"recibio": pesos(paga_con), "cambio": pesos(paga_con - venta.total)}
-        partes.append(f"Venta {venta.folio} por {pesos(venta.total)} con {venta.get_forma_pago_display().lower()}.")
+        if venta.estado == Venta.Estado.POR_COBRAR:
+            partes.append(f"{venta.folio} por {pesos(venta.total)} pasa a caja con el turno {venta.pase.numero}.")
+        else:
+            partes.append(f"Venta {venta.folio} por {pesos(venta.total)} a crédito; vence el {venta.vence:%d/%m/%Y}.")
         if vencido:
             partes.append(f"Crédito autorizado por {vendedor.get_short_name() or vendedor.get_username()} aunque debía {pesos(vencido)} vencido.")
     for oc in ordenes:
@@ -765,16 +761,17 @@ def pedido_cancelar(request, pk):
 
 @login_required
 def caja(request):
+    """La caja: cobra lo que mandan los vendedores (por turno del cliente), y abre y cierra con su corte."""
     turno = _turno(request.user)
     if request.method == "POST":
         try:
-            quien = _autoriza(request)
+            quien = _autoriza(request, cobra=True)
             if not quien:
                 return redirect("caja")
             if request.POST.get("accion") == "abrir":
                 abrir_turno(request.user, _decimal(request.POST.get("fondo"), Decimal(0)), por=quien)
                 messages.success(request, "Caja abierta.")
-                return redirect("mostrador")
+                return redirect("caja")
             if request.POST.get("accion") == "cerrar" and turno:
                 contado = [_decimal(request.POST.get(k), Decimal(0)) for k in CAMPO.values()]
                 turno, esperado = cerrar_turno(turno, *contado, por=quien)
@@ -783,12 +780,16 @@ def caja(request):
         except ValidationError as e:
             messages.error(request, " ".join(e.messages))
         return redirect("caja")
-    ctx = {"turno": turno, "formas": [c for c in FormaPago.choices if c[0] != FormaPago.CREDITO],
-           "por_cobrar": Venta.objects.filter(estado=Venta.Estado.POR_COBRAR).select_related("cliente", "usuario").order_by("fecha")}
+    ctx = {"turno": turno, **_por_cobrar_ctx()}
     if turno:
         esp = esperado_en_caja(turno)
         ctx["esperado"] = [(FormaPago(k).label, CAMPO[k], v) for k, v in esp.items()]
-        ctx["ventas"] = turno.ventas.order_by("-pk")[:20]
+        ctx["ventas"] = turno.ventas.select_related("cliente", "pase").order_by("-cobrada", "-pk")[:20]
+    cobrado = request.session.pop("cobrado", None)
+    if cobrado:
+        ctx["cobrado"] = cobrado
+        ctx["cobrado_ventas"] = Venta.objects.filter(folio__in=cobrado["folios"]).order_by("pk")
+        ctx["cobrado_tickets"] = [reverse("remision", args=[f]) + "?formato=ticket" for f in cobrado["folios"]]
     corte = request.session.pop("corte", None)
     if corte:
         t = Turno.objects.filter(pk=corte, usuario=request.user).first()
@@ -798,6 +799,176 @@ def caja(request):
             ctx["corte_filas"] = [(FormaPago(k).label, v, getattr(t, f"{CAMPO[k]}_contado"),
                                    getattr(t, f"{CAMPO[k]}_contado") - v) for k, v in esp.items()]
     return render(request, "ventas/caja.html", ctx)
+
+
+def _por_cobrar_ctx():
+    return {"cuentas": turnos.por_cobrar(), "formas": [c for c in FormaPago.choices if c[0] != FormaPago.CREDITO]}
+
+
+@login_required
+def caja_por_cobrar(request):
+    """La lista de lo que hay por cobrar, para que la pantalla de Caja se actualice sola."""
+    return render(request, "ventas/_por_cobrar.html", {"turno": _turno(request.user), **_por_cobrar_ctx()})
+
+
+@login_required
+@require_POST
+def caja_cobrar(request):
+    """La caja cobra en un solo pago las remisiones del turno de un cliente, con el NIP de quien cobra."""
+    turno = _turno(request.user)
+    if not turno:
+        messages.error(request, "Abre la caja para cobrar: el dinero entra a su corte.")
+        return redirect("caja")
+    quien = _autoriza(request, cobra=True)
+    if not quien:
+        return redirect("caja")
+    forma = request.POST.get("forma_pago", "")
+    paga_con = _decimal(request.POST.get("paga_con")) if forma == FormaPago.EFECTIVO else None
+    try:
+        ventas = cobrar_en_caja(request.POST.getlist("folio"), turno, forma, quien, paga_con)
+    except ValidationError as e:
+        messages.error(request, " ".join(e.messages))
+        return redirect("caja")
+    total = sum((v.total for v in ventas), Decimal(0))
+    pase = ventas[0].pase
+    request.session["cobrado"] = {
+        "folios": [v.folio for v in ventas], "turno": pase.numero if pase else None,
+        "nombre": turnos.Cuenta(pase, m.cliente_mostrador().pk, ventas).nombre, "total": pesos(total),
+        "forma": FormaPago(forma).label.lower(),
+        "recibio": pesos(paga_con) if paga_con is not None else "", "cambio": pesos(paga_con - total) if paga_con is not None else ""}
+    return redirect("caja")
+
+
+# Turnos de clientes ----------------------------------------------------------------------------------------------
+
+@login_required
+def turnos_tomar(request):
+    """Donde el cliente toma su turno al llegar: da su número de cliente si tiene (pasa antes) y sale su papelito.
+    Con ?kiosco=1 se ve solo eso, para dejarla en una tableta a la entrada."""
+    kiosco = (request.POST if request.method == "POST" else request.GET).get("kiosco") == "1"
+    aqui = reverse("turnos") + ("?kiosco=1" if kiosco else "")
+    if request.method == "POST":
+        try:
+            pase = turnos.tomar(request.POST.get("numero_cliente", ""), request.POST.get("nombre", ""))
+        except ValidationError as e:
+            messages.error(request, " ".join(e.messages))
+            request.session["turno_intento"] = {"numero_cliente": request.POST.get("numero_cliente", "")[:30],
+                                                "nombre": request.POST.get("nombre", "")[:60]}
+        else:
+            request.session["turno_nuevo"] = pase.pk
+        return redirect(aqui)
+    nuevo = request.session.pop("turno_nuevo", None)
+    ctx = {"turno": _turno(request.user), "kiosco": kiosco, "aqui": aqui,
+           "nuevo": Pase.objects.select_related("cliente").filter(pk=nuevo).first() if nuevo else None,
+           "intento": request.session.pop("turno_intento", {}),
+           "pantalla_url": reverse("turnos_pantalla", args=[turnos.clave_pantalla()])}
+    if not kiosco:
+        ctx["tablero"] = turnos.de_hoy()
+    return render(request, "ventas/turnos.html", ctx)
+
+
+@login_required
+def turnos_tablero(request):
+    """Cómo va la fila de hoy, para que la pantalla de Turnos se actualice sola."""
+    return render(request, "ventas/_turnos_tablero.html", {"tablero": turnos.de_hoy()})
+
+
+@login_required
+def turnos_tira(request):
+    """Los turnos en el mostrador (a quién llamar, quién está en caja y quién ya pagó), para que se actualicen solos."""
+    return render(request, "ventas/_turnos_tira.html", {
+        "tira": turnos.de_hoy(), "pase": m.Ticket(request.session).pase, "aqui": request.GET.get("next") or reverse("mostrador")})
+
+
+@login_required
+def turno_papel(request, pk):
+    """El papelito del turno (80 mm)."""
+    return render(request, "ventas/turno_papel.html", {"pase": get_object_or_404(Pase.objects.select_related("cliente"), pk=pk)})
+
+
+@login_required
+@require_POST
+def turno_llamar(request, pk=None):
+    """El vendedor llama al que sigue (o a un turno en particular, o vuelve a llamar al suyo): sale en la pantalla
+    de llamados y el ticket queda a su nombre. Si dio su número de cliente, el ticket ya empieza con él."""
+    ticket = m.Ticket(request.session)
+    actual = ticket.pase
+    try:
+        if actual and (pk is None or pk != actual.pk):
+            if ticket.datos["lineas"]:
+                raise ValidationError(f"Manda a caja o pon en espera el ticket del turno {actual.numero} antes de llamar a otro.")
+            if not actual.ventas.exists():
+                turnos.cerrar(actual)  # no compró nada: su turno termina aquí
+            ticket.atender(None)
+        if pk is None:
+            pase = turnos.llamar_siguiente(request.user)
+            if pase is None:
+                messages.info(request, "No hay nadie esperando turno.")
+                return _volver(request)
+        else:
+            pase = turnos.llamar(get_object_or_404(Pase, pk=pk), request.user)
+    except ValidationError as e:
+        messages.error(request, " ".join(e.messages))
+        return _volver(request)
+    ticket.atender(pase)
+    if pase.cliente_id and not ticket.datos["lineas"]:
+        ticket.elegir_cliente(pase.cliente_id)
+    request.session["enfocar_codigo"] = bool(pase.cliente_id)
+    return _volver(request)
+
+
+@login_required
+@require_POST
+def turno_terminar(request):
+    """El turno que se estaba atendiendo no llegó o se fue sin comprar: sale de la fila."""
+    ticket = m.Ticket(request.session)
+    pase = ticket.pase
+    if pase:
+        try:
+            turnos.cerrar(pase)
+        except ValidationError as e:
+            messages.error(request, " ".join(e.messages))
+        ticket.datos["pase"] = None
+        if pase.cliente_id and ticket.datos["cliente"] == pase.cliente_id and not ticket.datos["lineas"]:
+            ticket.datos["cliente"] = None  # el siguiente empieza como público en general
+        ticket.guardar()
+    return _volver(request)
+
+
+@login_required
+@require_POST
+def turno_quitar(request, pk):
+    """Desde la pantalla de Turnos: quitar de la fila a alguien que ya se fue."""
+    pase = get_object_or_404(Pase, pk=pk)
+    try:
+        turnos.cerrar(pase)
+        messages.success(request, f"El turno {pase.numero} salió de la fila.")
+    except ValidationError as e:
+        messages.error(request, " ".join(e.messages))
+    return redirect("turnos")
+
+
+def _pantalla_valida(clave):
+    if not constant_time_compare(clave, turnos.clave_pantalla()):
+        raise Http404
+
+
+def turnos_pantalla(request, clave):
+    """La pantalla de la sala: a quién se está llamando, con voz. Sin sesión (queda prendida todo el día en una
+    tele); su dirección lleva una clave que no se adivina."""
+    _pantalla_valida(clave)
+    from django.conf import settings
+
+    return render(request, "ventas/turnos_pantalla.html", {
+        "negocio": settings.NEGOCIO_NOMBRE, "datos_url": reverse("turnos_pantalla_datos", args=[clave])})
+
+
+def turnos_pantalla_datos(request, clave):
+    """Lo que muestra la pantalla de llamados. No pide sesión ni consulta la base: lee lo último guardado."""
+    _pantalla_valida(clave)
+    r = JsonResponse(turnos.pantalla())
+    r["Cache-Control"] = "no-store"
+    return r
 
 
 @login_required
@@ -955,7 +1126,7 @@ def venta_abonar(request, folio):
     venta = _venta(folio)
     turno = _turno(request.user)
     if not turno:
-        messages.error(request, "Abre la caja para registrar el abono: el dinero entra al corte de tu turno.")
+        messages.error(request, "Abre la caja para registrar el abono: el dinero entra a su corte.")
         return redirect("venta", folio)
     monto = _decimal(request.POST.get("monto"))
     forma = request.POST.get("forma_pago", FormaPago.EFECTIVO)
@@ -964,7 +1135,7 @@ def venta_abonar(request, folio):
     if monto is None:
         messages.error(request, "Escribe cuánto abona.")
         return redirect("venta", folio)
-    quien = _autoriza(request)
+    quien = _autoriza(request, cobra=True)
     if not quien:
         return redirect("venta", folio)
     try:
@@ -1154,13 +1325,19 @@ def remision_nueva(request, pk=None):
                 partidas = rem.partidas(datos["lineas"], cliente, _precio_remision(request, cliente))
                 # a crédito, a quien debe algo vencido, lo autoriza un administrador
                 vencido = cli.vencido(cliente) if datos["condiciones"] == "CREDITO" else 0
+                # de contado pasa a caja con el turno del cliente: el que trae o, si no trae, el que sigue
+                pase, tecleado = None, (request.POST.get("turno") or "").strip()
+                if tecleado and datos["condiciones"] != "CREDITO":
+                    pase = pase_de_hoy(tecleado)
+                    if pase is None:
+                        raise ValidationError(f"Hoy no hay un turno {tecleado} abierto. Déjalo vacío y el sistema le da uno.")
                 quien = _autoriza(request, admin=bool(vencido))
                 if quien:
                     venta = emitir_remision(cliente, partidas, datos["condiciones"], quien, datos["orden_compra"],
-                                            datos["observaciones"], datos["vehiculo"])
+                                            datos["observaciones"], datos["vehiculo"], pase=pase)
                     if borrador:
                         borrador.delete()
-                    siguiente = ("Ya puedes cobrarla en Caja." if venta.estado == Venta.Estado.POR_COBRAR
+                    siguiente = (f"Pasa a caja con el turno {venta.pase.numero}." if venta.estado == Venta.Estado.POR_COBRAR
                                  else f"Quedó en Por cobrar; vence el {venta.vence:%d/%m/%Y}.")
                     autorizo = (f" Crédito autorizado por {quien.get_short_name() or quien.get_username()} aunque debía "
                                 f"{pesos(vencido)} vencido.") if vencido else ""
@@ -1208,9 +1385,9 @@ def remision_cobrar(request, folio):
     turno = _turno(request.user)
     destino = "caja" if request.POST.get("desde") == "caja" else None
     if not turno:
-        messages.error(request, "Abre la caja para cobrar: el dinero entra al corte de tu turno.")
+        messages.error(request, "Abre la caja para cobrar: el dinero entra a su corte.")
         return redirect("caja")
-    quien = _autoriza(request)
+    quien = _autoriza(request, cobra=True)
     if quien:
         forma = request.POST.get("forma_pago", "")
         paga_con = _decimal(request.POST.get("paga_con")) if forma == FormaPago.EFECTIVO else None

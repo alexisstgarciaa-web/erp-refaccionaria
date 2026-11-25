@@ -1,34 +1,32 @@
-{% load erp %}
-<div class="barra-cobro" role="region" aria-label="Cobro"><div class="dentro">
+{% load erp %}{# El vendedor no cobra: registra la venta y el cliente paga en caja con su turno. A crédito no pasa por caja. #}
+<div class="barra-cobro" role="region" aria-label="Mandar a caja"><div class="dentro">
   <div class="cobro-resumen">
-    <b>{{ cliente }}</b>
+    <b>{% if pase %}Turno {{ pase.numero }} · {% endif %}{{ cliente }}</b>
     <span>{% if piezas %}{{ piezas|cant }} pieza{{ piezas|pluralize }} para hoy{% else %}Sin piezas para hoy{% endif %}{% if pedido_n %} · {{ pedido_n }} sobre pedido por {{ pedido_total|pesos }}{% endif %}</span>
   </div>
   <div class="cobro-total">
-    <span>Total a cobrar</span>
+    <span>Total · se paga en caja</span>
     <b>{{ total|pesos }}</b>
     <small>IVA incluido {{ iva|pesos }}</small>
   </div>
-  <form method="post" action="{% url 'ticket_cobrar' %}" class="cobro-accion" id="cobro-form" data-enter="normal" data-nip="vendedor" data-nip-para="Cobrar {{ total|pesos }}"{% if cliente_vencido %} data-nip-admin-si="forma_pago:CREDITO" data-nip-admin-para="Debe {{ cliente_vencido|pesos }} vencido: a crédito lo autoriza un administrador"{% endif %} data-total="{{ total|stringformat:'.2f' }}">{% csrf_token %}
+  <form method="post" action="{% url 'ticket_a_caja' %}" class="cobro-accion" id="cobro-form" data-enter="normal" data-nip="vendedor"
+        data-nip-para="Registrar la venta de {{ total|pesos }}"{% if cliente_vencido %} data-nip-admin-si="condiciones:CREDITO" data-nip-admin-para="Debe {{ cliente_vencido|pesos }} vencido: a crédito lo autoriza un administrador"{% endif %}>{% csrf_token %}
     <input type="hidden" name="next" value="{{ aqui }}">
     {% for k, v in base.items %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+    {% if cliente.dias_credito and total %}
     <fieldset class="pagos">
-      <legend class="sr">Forma de pago</legend>
-      {% for fp in pagos %}
-        <label><input type="radio" name="forma_pago" value="{{ fp.value }}"{% if cliente.dias_credito and fp.value == 'CREDITO' or not cliente.dias_credito and forloop.first %} checked{% endif %}><span>{{ fp.label }}</span></label>
-      {% endfor %}
+      <legend class="sr">Cómo paga</legend>
+      <label><input type="radio" name="condiciones" value="CONTADO"><span>Contado en caja</span></label>
+      <label><input type="radio" name="condiciones" value="CREDITO" checked><span>Crédito</span></label>
     </fieldset>
-    {% if turno and total %}
-    <label class="paga-con"{% if cliente.dias_credito %} hidden{% endif %}>
-      <span>Paga con</span>
-      <span class="con-signo"><input name="paga_con" id="paga-con" inputmode="decimal" data-cifra="pesos" autocomplete="off" placeholder="{{ total|miles }}"></span>
-      <small id="cambio" aria-live="polite"></small>
+    {% else %}<input type="hidden" name="condiciones" value="CONTADO">{% endif %}
+    {% if total and cliente.pk == publico.pk and not pase.quien %}
+    <label class="paga-con a-nombre">
+      <span>Nombre del cliente <i>opcional</i></span>
+      <input name="nombre" id="a-nombre" maxlength="60" autocomplete="off" placeholder="Para que caja lo ubique">
     </label>
     {% endif %}
-    {% if turno %}
-      <button class="cobrar" type="submit" title="F9"{% if not lineas %} disabled{% endif %}>{% if total %}Cobrar<span class="cobrar-monto"> {{ total|pesos }}</span>{% elif lineas %}Registrar pedido{% else %}Cobrar{% endif %}</button>
-    {% else %}
-      <a class="cobrar" href="{% url 'caja' %}">Abrir caja para cobrar</a>
-    {% endif %}
+    <button class="cobrar" type="submit" title="F9"{% if not lineas %} disabled{% endif %}
+            data-contado="Mandar a caja" data-credito="Registrar a crédito">{% if total %}<span class="cobrar-que">{% if cliente.dias_credito %}Registrar a crédito{% else %}Mandar a caja{% endif %}</span><span class="cobrar-monto"> {{ total|pesos }}</span>{% elif lineas %}Registrar pedido{% else %}Mandar a caja{% endif %}</button>
   </form>
 </div></div>

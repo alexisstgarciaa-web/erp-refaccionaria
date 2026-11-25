@@ -1,0 +1,38 @@
+{% load erp %}{# Turnos en el mostrador: a quién llamar, quién está en caja y quién ya pagó. Recibe tira, pase (el que se atiende) y aqui. #}
+<div class="tira-turnos">
+  <div class="tira-mio">
+    {% if pase %}
+    <span class="tira-etiqueta">Atendiendo</span>
+    <b class="tira-numero">{{ pase.numero }}</b>
+    <span class="tira-quien">{{ pase.quien|default:"Sin nombre" }}{% if pase.cliente_id %} <span class="mono">{{ pase.cliente.folio }}</span>{% endif %}</span>
+    {% if pase.llamado %}
+    <form method="post" action="{% url 'turno_llamar' pase.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{{ aqui }}">
+      <button type="submit" class="tira-boton">Volver a llamar</button></form>
+    {% endif %}
+    <form method="post" action="{% url 'turno_terminar' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ aqui }}">
+      <button type="submit" class="tira-boton">No llegó o no compró</button></form>
+    {% endif %}
+    <form method="post" action="{% url 'turno_llamar_siguiente' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ aqui }}">
+      <button type="submit" class="tira-llamar"{% if not tira.espera %} disabled{% endif %}>Llamar al siguiente{% if tira.espera %} <b>{{ tira.espera.0.numero }}</b>{% endif %}</button></form>
+  </div>
+  <div class="tira-fila">
+    <span class="tira-etiqueta">En espera <b>{{ tira.espera|length }}</b></span>
+    {% for p in tira.espera %}
+    <form method="post" action="{% url 'turno_llamar' p.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{{ aqui }}">
+      <button type="submit" class="chip-turno{% if p.cliente_id %} registrado{% endif %}" title="Llamar este turno"><b>{{ p.numero }}</b>{% if p.nombre_visible %} {{ p.nombre_visible }}{% endif %}{% if p.cliente_id %} <i>cliente</i>{% endif %}</button></form>
+    {% empty %}<span class="tenue">Nadie esperando.</span>
+    {% endfor %}
+  </div>
+  {% if tira.caja %}
+  <div class="tira-fila">
+    <span class="tira-etiqueta">En caja</span>
+    {% for p in tira.caja %}<span class="chip-turno quieto"><b>{{ p.numero }}</b>{% if p.nombre_visible %} {{ p.nombre_visible }}{% endif %} · {{ p.total_caja|pesos }}</span>{% endfor %}
+  </div>
+  {% endif %}
+  {% if tira.pagados %}
+  <div class="tira-fila">
+    <span class="tira-etiqueta listo">Ya pagó · entrégale</span>
+    {% for p in tira.pagados %}<span class="chip-turno pagado"><b>{{ p.numero }}</b>{% if p.nombre_visible %} {{ p.nombre_visible }}{% endif %} · {{ p.pagado|date:"H:i" }}</span>{% endfor %}
+  </div>
+  {% endif %}
+</div>

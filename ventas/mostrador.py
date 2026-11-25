@@ -25,8 +25,8 @@ from compras.aplicaciones import ARMADORAS, coincide
 from compras.listas import agregar_a_catalogo
 from compras.models import OrdenCompra, OrdenCompraLinea, PartidaListaProveedor
 
-from .models import Cliente, FormaPago, PedidoCliente, TicketGuardado
-from .servicios import registrar_venta
+from .models import Cliente, FormaPago, Pase, PedidoCliente, TicketGuardado
+from .servicios import dar_pase, registrar_para_caja
 
 NIVELES = [("ECO", "Económico"), ("STD", "Estándar"), ("PRE", "Premium")]
 IVA = Decimal("1.16")
@@ -236,6 +236,16 @@ class Ticket:
 
     def elegir_cliente(self, pk):
         self.datos["cliente"] = Cliente.objects.get(pk=pk, activo=True).pk
+        self.guardar()
+
+    @property
+    def pase(self):
+        """El turno del cliente que se está atendiendo en este ticket, si es de hoy y sigue abierto."""
+        pk = self.datos.get("pase")
+        return Pase.objects.filter(pk=pk, dia=timezone.localdate(), cerrado__isnull=True).first() if pk else None
+
+    def atender(self, pase):
+        self.datos["pase"] = pase.pk if pase else None
         self.guardar()
 
     def agregar(self, clave, pos=None, cantidad=None, nivel="", precio=None):
@@ -557,13 +567,15 @@ def guardar_ticket(ticket, tipo, usuario, veh=None, base=None, nombre=""):
         tipo=tipo, usuario=usuario if usuario and usuario.pk else None, cliente=ticket.cliente, nombre=(nombre or "").strip()[:150],
         vehiculo=str(veh) if veh else "", vehiculo_params={k: v for k, v in (base or {}).items() if v not in (None, "")},
         lineas=[dict(ln) for ln in ticket.datos["lineas"]], detalle=detalle,
-        total=sum((ln.importe for ln in lineas), Decimal(0)))
+        total=sum((ln.importe for ln in lineas), Decimal(0)),
+        pase=ticket.pase if tipo == TicketGuardado.Tipo.ESPERA else None)  # el turno se va con el ticket en espera
     ultimo = (TicketGuardado.objects.filter(tipo=tipo, folio__isnull=False).exclude(pk=g.pk).order_by("-pk")
               .values_list("folio", flat=True).first())
     g.folio = f"{tipo}-{int(ultimo.split('-')[1]) + 1 if ultimo else 1:06d}"  # cada tipo con su propio consecutivo
     g.save(update_fields=["folio"])
     if tipo == TicketGuardado.Tipo.ESPERA:
         ticket.datos["cliente"] = None  # el que sigue empieza como público en general
+        ticket.datos["pase"] = None
         ticket.vaciar()
     return g
 
@@ -584,6 +596,8 @@ def retomar(ticket, g, usuario, veh=None, base=None):
     ticket.session.pop("ticket_deshacer", None)
     ticket.datos["cliente"] = g.cliente_id
     ticket.datos["lineas"] = lineas
+    if g.tipo == TicketGuardado.Tipo.ESPERA:
+        ticket.datos["pase"] = g.pase_id
     ticket.guardar()
     g.retomado = timezone.now()
     g.save(update_fields=["retomado"])
@@ -591,10 +605,13 @@ def retomar(ticket, g, usuario, veh=None, base=None):
 
 
 @transaction.atomic
-def cobrar(ticket, turno, forma_pago, usuario, veh=None, contacto=""):
-    """Registra la venta de lo que hay en anaquel y una orden de compra de emergencia (borrador)
-    por lo que va sobre pedido. Lo sobre pedido no se cobra hoy: se cobra al entregarse, y queda en
-    Pedidos para avisarle al cliente (contacto: nombre o teléfono). Devuelve (venta | None, [órdenes])."""
+def mandar_a_caja(ticket, usuario, veh=None, contacto="", credito=False, nombre=""):
+    """El vendedor registra la venta de lo que hay en anaquel; no cobra. De contado queda por cobrar en caja con
+    el turno del cliente (el que se está atendiendo o, si llegó sin turno, el que sigue; nombre: cómo se llama,
+    para que la cajera lo reconozca). A crédito va directo a Por cobrar y no pasa por caja.
+    Lo sobre pedido no se cobra hoy: queda en una orden de compra de emergencia (borrador) y en Pedidos, para
+    avisarle al cliente (contacto: nombre o teléfono), y se cobra al entregarse.
+    Devuelve (venta | None, [órdenes])."""
     lineas = ticket.lineas(veh)
     if not lineas:
         raise ValidationError("El ticket está vacío.")
@@ -603,16 +620,23 @@ def cobrar(ticket, turno, forma_pago, usuario, veh=None, contacto=""):
             raise ValidationError(f"{ln.opcion.codigo} todavía no está completo en anaquel; quítalo del ticket "
                                   "y entrégalo cuando llegue.")
     cliente = ticket.cliente
-    if forma_pago == FormaPago.CREDITO and cliente.dias_credito <= 0:
+    if credito and cliente.dias_credito <= 0:
         raise ValidationError(f"{cliente} no tiene crédito autorizado.")
     vender = [ln for ln in lineas if not ln.sobre_pedido]
     for ln in vender:
         if ln.precio is None:
             raise ValidationError(f"{ln.opcion.codigo} no tiene precio en la lista {cliente.lista_precio}.")
+    pase = ticket.pase
+    nombre = " ".join((nombre or "").split())[:60]
     venta = None
     if vender:
-        venta = registrar_venta(turno, cliente, [{"producto": ln.objeto, "cantidad": ln.cantidad, "precio": ln.precio_especial} for ln in vender],
-                                forma_pago, usuario)
+        if not credito and pase is None:
+            pase = dar_pase(nombre)
+        elif pase and nombre and not pase.nombre:
+            pase.nombre = nombre
+            pase.save(update_fields=["nombre"])
+        venta = registrar_para_caja(cliente, [{"producto": ln.objeto, "cantidad": ln.cantidad, "precio": ln.precio_especial}
+                                              for ln in vender], usuario, credito=credito, pase=pase)
         # para la remisión: qué vehículo se atendió y qué quedó sobre pedido
         venta.vehiculo = str(veh) if veh else ""
         venta.pedido = [{"codigo": ln.opcion.codigo, "descripcion": descripcion(ln),
@@ -639,7 +663,11 @@ def cobrar(ticket, turno, forma_pago, usuario, veh=None, contacto=""):
     if venta and entregados:
         PedidoCliente.objects.filter(pk__in=entregados, estado=PedidoCliente.Estado.PEDIDO).update(
             estado=PedidoCliente.Estado.ENTREGADO, cerrado=timezone.now(), venta_entrega=venta)
+    if pase and not venta:  # solo dejó un pedido: su turno ya se atendió y no pasa a caja
+        pase.cerrado = timezone.now()
+        pase.save(update_fields=["cerrado"])
     ticket.datos["cliente"] = None  # el siguiente cliente empieza como público en general, sin crédito
+    ticket.datos["pase"] = None
     ticket.vaciar()
     return venta, ordenes
 

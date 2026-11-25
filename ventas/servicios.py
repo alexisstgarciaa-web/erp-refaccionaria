@@ -4,15 +4,15 @@ from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 from django.core.exceptions import ValidationError
-from django.db import transaction
-from django.db.models import Sum
+from django.db import IntegrityError, transaction
+from django.db.models import Max, Sum
 from django.utils import timezone
 
 from catalogo.models import Precio
 from inventario.models import Movimiento
 from inventario.servicios import registrar_entrada, registrar_salida
 
-from .models import Abono, Cliente, Devolucion, DevolucionLinea, FormaPago, Turno, Venta, VentaLinea
+from .models import Abono, Cliente, Devolucion, DevolucionLinea, FormaPago, Pase, Turno, Venta, VentaLinea
 from .templatetags.erp import pesos
 
 CENT = Decimal("0.01")
@@ -50,19 +50,54 @@ def registrar_venta(turno, cliente, partidas, forma_pago, usuario=None):
     return _crear_venta(cliente, partidas, forma_pago, turno=turno, usuario=usuario or turno.usuario)
 
 
+def dar_pase(nombre="", cliente=None, **extra):
+    """El siguiente turno de cliente del día (1, 2, 3… cada día empieza de nuevo). cliente: el registrado, si dio
+    su número."""
+    hoy = timezone.localdate()
+    nombre = " ".join((nombre or "").split())[:60]
+    for _ in range(5):  # si dos lo piden al mismo tiempo, el segundo toma el que sigue
+        ultimo = Pase.objects.filter(dia=hoy).aggregate(n=Max("numero"))["n"] or 0
+        try:
+            with transaction.atomic():
+                return Pase.objects.create(dia=hoy, numero=ultimo + 1, nombre=nombre, cliente=cliente, **extra)
+        except IntegrityError:
+            continue
+    raise ValidationError("No se pudo dar el turno. Intenta otra vez.")
+
+
+def pase_de_hoy(numero):
+    """El turno de hoy con ese número, si sigue abierto."""
+    try:
+        return Pase.objects.filter(dia=timezone.localdate(), numero=int(numero), cerrado__isnull=True).first()
+    except (TypeError, ValueError):
+        return None
+
+
 def _siguiente_remision():
     ultimo = Venta.objects.filter(folio__startswith="REM-").order_by("-pk").values_list("folio", flat=True).first()
     return f"REM-{int(ultimo.split('-')[1]) + 1 if ultimo else 1:06d}"
 
 
 @transaction.atomic
-def emitir_remision(cliente, partidas, condiciones, usuario, orden_compra="", observaciones="", vehiculo=""):
+def emitir_remision(cliente, partidas, condiciones, usuario, orden_compra="", observaciones="", vehiculo="",
+                    pase=None):
     """Remisión de Remisiones › Nueva, con folio REM. El inventario sale al emitirla.
-    De contado queda «por cobrar en caja» (entra al corte del turno que la cobre); a crédito va a Por cobrar."""
+    De contado queda «por cobrar en caja» con el turno del cliente (pase; si no trae, se le da el que sigue) y
+    entra al corte de la caja que la cobre; a crédito va a Por cobrar."""
     forma = FormaPago.CREDITO if condiciones == "CREDITO" else ""
+    if not forma and pase is None:
+        pase = dar_pase()
     return _crear_venta(cliente, partidas, forma, usuario=usuario, origen=Venta.Origen.REMISION,
                         folio=_siguiente_remision(), orden_compra=(orden_compra or "").strip()[:40],
-                        observaciones=(observaciones or "").strip()[:300], vehiculo=(vehiculo or "").strip()[:120])
+                        observaciones=(observaciones or "").strip()[:300], vehiculo=(vehiculo or "").strip()[:120],
+                        pase=pase)
+
+
+@transaction.atomic
+def registrar_para_caja(cliente, partidas, usuario, credito=False, pase=None):
+    """Venta del mostrador: el vendedor solo la registra. De contado queda por cobrar en caja (folio VTA);
+    a crédito va directo a Por cobrar y no pasa por caja."""
+    return _crear_venta(cliente, partidas, FormaPago.CREDITO if credito else "", usuario=usuario, pase=pase)
 
 
 @transaction.atomic
@@ -79,6 +114,22 @@ def cobrar_remision(venta, turno, forma_pago, usuario=None):
     venta.cobrada, venta.cobrada_por = timezone.now(), usuario
     venta.save(update_fields=["turno", "forma_pago", "estado", "saldo", "cobrada", "cobrada_por"])
     return venta
+
+
+@transaction.atomic
+def cobrar_en_caja(folios, turno, forma_pago, usuario=None, paga_con=None):
+    """La caja cobra en un solo pago una o varias ventas por cobrar (las del turno de un cliente). Todo o nada.
+    paga_con: con cuánto paga en efectivo, para avisar si no alcanza. Devuelve las ventas cobradas."""
+    folios = list(dict.fromkeys(f for f in folios if f))
+    if not folios:
+        raise ValidationError("No hay nada que cobrar.")
+    ventas = list(Venta.objects.filter(folio__in=folios).order_by("pk"))
+    if len(ventas) != len(folios):
+        raise ValidationError("Alguna de esas remisiones ya no existe. Actualiza la lista.")
+    total = sum((v.total for v in ventas), Decimal(0))
+    if forma_pago == FormaPago.EFECTIVO and paga_con is not None and paga_con < total:
+        raise ValidationError(f"Paga con {pesos(paga_con)} y son {pesos(total)}: faltan {pesos(total - paga_con)}.")
+    return [cobrar_remision(v, turno, forma_pago, usuario) for v in ventas]
 
 
 def _crear_venta(cliente, partidas, forma_pago, *, turno=None, usuario=None, origen=Venta.Origen.MOSTRADOR,

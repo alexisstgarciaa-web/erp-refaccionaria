@@ -11,6 +11,8 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 import os
+import sys
+import tempfile
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -190,6 +192,14 @@ CORREO_SERVIDOR = bool(BREVO_API_KEY or (EMAIL_HOST and EMAIL_HOST_USER and EMAI
 CORREO_REMITENTE = os.environ.get("CORREO_REMITENTE", "").strip() or (f"{NEGOCIO_NOMBRE} <{EMAIL_HOST_USER}>" if EMAIL_HOST_USER else "")
 DEFAULT_FROM_EMAIL = CORREO_REMITENTE or "webmaster@localhost"
 NEGOCIO_CORREO = os.environ.get("NEGOCIO_CORREO", "").strip()
+
+# La pantalla de llamados de turnos lee de un archivo (lo comparten todos los procesos del servidor) para no pedir
+# sesión ni consultar la base cada pocos segundos.
+CACHES = {
+    "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
+    "pantalla": {"BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
+                 "LOCATION": os.path.join(tempfile.gettempdir(), "erp-pantalla-pruebas" if "test" in sys.argv else "erp-pantalla")},
+}
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field

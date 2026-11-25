@@ -127,8 +127,42 @@ class Turno(models.Model):
         return f"Turno {self.pk} · {self.usuario} · {self.abierto:%d/%m %H:%M}"
 
 
+class Pase(models.Model):
+    """Turno del cliente: el número del día con el que lo llama un vendedor y con el que paga en caja.
+    Se toma al llegar (pantalla Turnos, con su papelito; si da su número de cliente queda ligado a él y pasa
+    antes) o, si llegó directo al mostrador, se le da al mandarlo a caja. Sus remisiones de contado quedan
+    ligadas al turno: la cajera lo busca por número o por nombre y las cobra juntas.
+    (En el código «turno» es el de caja; por eso este se llama pase.)"""
+
+    dia = models.DateField(db_index=True)
+    numero = models.PositiveIntegerField()
+    cliente = models.ForeignKey(Cliente, null=True, blank=True, on_delete=models.PROTECT, related_name="+",
+                                help_text="Si dio su número de cliente al tomar el turno: pasa antes")
+    nombre = models.CharField(max_length=60, blank=True, help_text="Cómo se llama, si lo dijo")
+    creado = models.DateTimeField(auto_now_add=True)
+    llamado = models.DateTimeField(null=True, blank=True, help_text="La última vez que un vendedor lo llamó")
+    atiende = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT,
+                                related_name="+", help_text="La sesión de mostrador que lo llamó")
+    cerrado = models.DateTimeField(null=True, blank=True, help_text="No llegó o se fue sin comprar")
+
+    class Meta:
+        ordering = ["dia", "numero"]
+        constraints = [models.UniqueConstraint(fields=["dia", "numero"], name="un_numero_de_turno_por_dia")]
+        verbose_name = "turno de cliente"
+        verbose_name_plural = "turnos de clientes"
+
+    def __str__(self):
+        return f"Turno {self.numero}" + (f" · {self.quien}" if self.quien else "")
+
+    @property
+    def quien(self):
+        """Cómo reconocerlo: el cliente registrado o el nombre que dio."""
+        return str(self.cliente) if self.cliente_id else self.nombre
+
+
 class Venta(models.Model):
-    """Una venta del mostrador (folio VTA) o una remisión hecha en Remisiones › Nueva (folio REM)."""
+    """Una venta del mostrador (folio VTA) o una remisión hecha en Remisiones › Nueva (folio REM).
+    El vendedor la registra y, si es de contado, queda por cobrar: la cobra la caja."""
 
     class Estado(models.TextChoices):
         PAGADA = "PAGADA", "Pagada"
@@ -168,6 +202,8 @@ class Venta(models.Model):
     cobrada = models.DateTimeField(null=True, blank=True, help_text="Cuándo se cobró en caja una remisión de contado")
     cobrada_por = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT,
                                     related_name="+")
+    pase = models.ForeignKey(Pase, null=True, blank=True, on_delete=models.PROTECT, related_name="ventas",
+                             help_text="Turno del cliente con el que pasa a caja")
 
     class Meta:
         ordering = ["-fecha"]
@@ -236,6 +272,8 @@ class TicketGuardado(models.Model):
     detalle = models.JSONField(default=list, help_text="[{i, codigo, descripcion, cantidad, precio, importe, pedido}]")
     total = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text="Con IVA, incluye lo sobre pedido")
     retomado = models.DateTimeField(null=True, blank=True, help_text="Cuando se pasó al ticket o se descartó")
+    pase = models.ForeignKey(Pase, null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+                             help_text="Turno del cliente de un ticket en espera")
 
     class Meta:
         ordering = ["-fecha"]
@@ -305,6 +343,9 @@ class Nip(models.Model):
 
     usuario = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="nip")
     huella = models.CharField(max_length=64, unique=True)
+    cobra = models.BooleanField("puede cobrar en caja", default=True,
+                                help_text="Quítalo a quien solo vende: hace remisiones y las manda a caja, pero no cobra, "
+                                          "no recibe abonos ni abre o cierra la caja. Un administrador siempre puede.")
     cambiado = models.DateTimeField(auto_now=True)
 
     class Meta:

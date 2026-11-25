@@ -37,8 +37,9 @@ def asignar(usuario, nip):
     Nip.objects.update_or_create(usuario=usuario, defaults={"huella": revisar(usuario, nip)})
 
 
-def quien(session, nip, admin=False):
-    """Usuario activo dueño del NIP. Si no hay o no alcanza (admin=True pide administrador), ValidationError.
+def quien(session, nip, admin=False, cobra=False):
+    """Usuario activo dueño del NIP. Si no hay o no alcanza (admin=True pide administrador; cobra=True, alguien
+    que pueda cobrar en caja), ValidationError.
     Después de varios NIPs equivocados seguidos en la misma sesión hay que esperar."""
     bloqueo = session.get("nip_bloqueo", 0)
     if bloqueo > time.time():
@@ -58,4 +59,6 @@ def quien(session, nip, admin=False):
     session["nip_fallos"] = 0
     if admin and not n.usuario.is_staff:  # sin decir de quién es: que no sirva para adivinar NIPs ajenos
         raise ValidationError("Ese NIP no es de administrador; esto lo autoriza un administrador.")
+    if cobra and not (n.cobra or n.usuario.is_staff):
+        raise ValidationError("Ese NIP no cobra en caja: lo hace quien atiende la caja o un administrador.")
     return n.usuario
