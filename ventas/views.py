@@ -5,10 +5,12 @@ from decimal import Decimal, InvalidOperation
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from django.contrib import messages
+from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.core.validators import validate_email
 from django.db.models import Count, Sum
+from django.core import signing
 from django.core.mail import EmailMessage
 from django.http import Http404, HttpResponse, JsonResponse
 from django.db.models import Q
@@ -17,6 +19,7 @@ from django.utils import timezone
 from django.urls import reverse
 from django.utils.crypto import constant_time_compare
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.decorators.http import require_POST
 
 from catalogo.models import ListaPrecio
@@ -550,17 +553,15 @@ def a_caja(request):
     partes = []
     if venta:
         request.session["ultima_venta"] = venta.folio
-        if venta.estado == Venta.Estado.POR_COBRAR:
-            partes.append(f"{venta.folio} por {pesos(venta.total)} pasa a caja con el turno {venta.pase.numero}.")
-        else:
-            partes.append(f"Venta {venta.folio} por {pesos(venta.total)} a crédito; vence el {venta.vence:%d/%m/%Y}.")
+        # el turno y el total van en grande arriba del mostrador («Pasa a caja»); aquí solo lo que eso no dice
         if vencido:
             partes.append(f"Crédito autorizado por {vendedor.get_short_name() or vendedor.get_username()} aunque debía {pesos(vencido)} vencido.")
     for oc in ordenes:
         partes.append(f"Quedó pedido a {oc.proveedor} en {oc.folio} (borrador, compra de emergencia).")
     if ordenes:
         partes.append("Lo ves en Pedidos para avisarle al cliente cuando llegue.")
-    messages.success(request, " ".join(partes))
+    if partes:
+        messages.success(request, " ".join(partes))
     return redirect("mostrador")  # siguiente cliente
 
 
@@ -843,10 +844,8 @@ def caja_cobrar(request):
 
 @login_required
 def turnos_tomar(request):
-    """Donde el cliente toma su turno al llegar: da su número de cliente si tiene (pasa antes) y sale su papelito.
-    Con ?kiosco=1 se ve solo eso, para dejarla en una tableta a la entrada."""
-    kiosco = (request.POST if request.method == "POST" else request.GET).get("kiosco") == "1"
-    aqui = reverse("turnos") + ("?kiosco=1" if kiosco else "")
+    """Turnos de hoy para el personal: dar un turno a quien llega, ver la fila y abrir las dos pantallas que van
+    sin sesión (la del cliente para tomar turno y la de llamados)."""
     if request.method == "POST":
         try:
             pase = turnos.tomar(request.POST.get("numero_cliente", ""), request.POST.get("nombre", ""))
@@ -856,15 +855,76 @@ def turnos_tomar(request):
                                                 "nombre": request.POST.get("nombre", "")[:60]}
         else:
             request.session["turno_nuevo"] = pase.pk
-        return redirect(aqui)
+        return redirect("turnos")
     nuevo = request.session.pop("turno_nuevo", None)
-    ctx = {"turno": _turno(request.user), "kiosco": kiosco, "aqui": aqui,
-           "nuevo": Pase.objects.select_related("cliente").filter(pk=nuevo).first() if nuevo else None,
-           "intento": request.session.pop("turno_intento", {}),
-           "pantalla_url": reverse("turnos_pantalla", args=[turnos.clave_pantalla()])}
-    if not kiosco:
-        ctx["tablero"] = turnos.de_hoy()
-    return render(request, "ventas/turnos.html", ctx)
+    nuevo = Pase.objects.select_related("cliente").filter(pk=nuevo).first() if nuevo else None
+    return render(request, "ventas/turnos.html", {
+        "turno": _turno(request.user), "nuevo": nuevo, "intento": request.session.pop("turno_intento", {}),
+        "papel_url": reverse("turno_papel", args=[nuevo.pk]) if nuevo else "", "tablero": turnos.de_hoy(),
+        "kiosco_url": reverse("turnos_kiosco", args=[turnos.clave_kiosco()]),
+        "pantalla_url": reverse("turnos_pantalla", args=[turnos.clave_pantalla()])})
+
+
+@login_required
+@require_POST
+def turnos_dejar(request, cual):
+    """Deja este aparato solo con una de las pantallas del cliente: cierra la sesión aquí y la abre."""
+    destino = (reverse("turnos_pantalla", args=[turnos.clave_pantalla()]) if cual == "llamados"
+               else reverse("turnos_kiosco", args=[turnos.clave_kiosco()]) + ("?papel=no" if request.POST.get("papel") == "no" else "?papel=si"))
+    logout(request)
+    return redirect(destino)
+
+
+SEGUNDOS_TURNO_EN_KIOSCO = 12  # cuánto se queda el número a la vista antes de volver a empezar
+SAL_TURNO = "erp.turnos.papel"  # firma el turno recién tomado, para enseñarlo e imprimirlo sin sesión
+
+
+def _kiosco_valido(clave):
+    if not constant_time_compare(clave, turnos.clave_kiosco()):
+        raise Http404
+
+
+def turnos_kiosco(request, clave):
+    """La pantalla donde el cliente toma su turno al llegar: pregunta si tiene número de cliente (pasa antes) y le
+    da su número con su papelito. Va sin sesión, para dejarla en una tableta a la entrada sin que quede abierto
+    el sistema; su dirección lleva una clave que no se adivina."""
+    _kiosco_valido(clave)
+    aqui = reverse("turnos_kiosco", args=[clave])
+    ctx = {"aqui": aqui, "intento": {}, "error": "", "nuevo": None, "segundos": SEGUNDOS_TURNO_EN_KIOSCO}
+    if request.method == "POST":
+        tiene = request.POST.get("tiene")
+        # contestó «No tengo»: no cuenta lo que haya quedado escrito en el número
+        numero = "" if tiene == "no" else " ".join(request.POST.get("numero_cliente", "").split())
+        nombre = request.POST.get("nombre", "")
+        try:
+            if tiene == "si" and not numero:
+                raise ValidationError("Teclea tu número de cliente o tu celular, o toca «No tengo».")
+            pase = turnos.tomar(numero, nombre)
+        except ValidationError as e:
+            ctx["error"] = " ".join(e.messages)
+            ctx["intento"] = {"numero_cliente": numero[:30], "nombre": nombre[:60], "tiene": tiene}
+        else:
+            return redirect(f"{aqui}?t={signing.dumps(pase.pk, salt=SAL_TURNO)}")
+    elif request.GET.get("t"):
+        ficha = request.GET["t"]
+        try:  # el número se queda a la vista un par de minutos; después la dirección ya no lo enseña
+            pk = signing.loads(ficha, salt=SAL_TURNO, max_age=120)
+        except signing.BadSignature:
+            return redirect(aqui)
+        ctx["nuevo"] = Pase.objects.select_related("cliente").filter(pk=pk).first()
+        ctx["papel_url"] = reverse("turno_papel_kiosco", args=[clave, ficha])
+    return render(request, "ventas/turnos_kiosco.html", ctx)
+
+
+@xframe_options_sameorigin  # se imprime desde un marco oculto de la misma pantalla
+def turno_papel_kiosco(request, clave, ficha):
+    """El papelito del turno que se acaba de tomar en la pantalla del cliente (sin sesión)."""
+    _kiosco_valido(clave)
+    try:
+        pk = signing.loads(ficha, salt=SAL_TURNO, max_age=600)
+    except signing.BadSignature:
+        raise Http404
+    return render(request, "ventas/turno_papel.html", {"pase": get_object_or_404(Pase.objects.select_related("cliente"), pk=pk)})
 
 
 @login_required
@@ -881,6 +941,7 @@ def turnos_tira(request):
 
 
 @login_required
+@xframe_options_sameorigin
 def turno_papel(request, pk):
     """El papelito del turno (80 mm)."""
     return render(request, "ventas/turno_papel.html", {"pase": get_object_or_404(Pase.objects.select_related("cliente"), pk=pk)})
@@ -913,7 +974,7 @@ def turno_llamar(request, pk=None):
     ticket.atender(pase)
     if pase.cliente_id and not ticket.datos["lineas"]:
         ticket.elegir_cliente(pase.cliente_id)
-    request.session["enfocar_codigo"] = bool(pase.cliente_id)
+    request.session["enfocar_codigo"] = True  # ya dijo si tiene número de cliente al tomar su turno: sigue el código
     return _volver(request)
 
 
@@ -972,6 +1033,7 @@ def turnos_pantalla_datos(request, clave):
 
 
 @login_required
+@xframe_options_sameorigin  # el ticket se imprime desde un marco oculto de Caja, sin abrir otra pestaña
 def remision(request, folio):
     """Remisión de una venta para imprimir, en hoja carta o en ticket de 80 mm. No es comprobante fiscal."""
     venta = get_object_or_404(Venta.objects.select_related("cliente", "usuario", "lista"), folio=folio)

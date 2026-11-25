@@ -1,0 +1,52 @@
+{% load erp %}{# Cómo va la fila de hoy. Recibe tablero (espera, atendiendo, caja, pagados). #}
+<div class="tablero">
+  <section class="tablero-col">
+    <h3>En espera <b>{{ tablero.espera|length }}</b></h3>
+    <ul>
+      {% for p in tablero.espera %}
+      <li class="tablero-turno{% if p.cliente_id %} registrado{% endif %}">
+        <b class="tablero-numero">{{ p.numero }}</b>
+        <span class="tablero-quien">{{ p.nombre_visible|default:"Sin nombre" }}{% if p.cliente_id %} <i>cliente · pasa antes</i>{% endif %}<small>llegó {{ p.creado|date:"H:i" }}</small></span>
+        <form method="post" action="{% url 'turno_quitar' p.pk %}">{% csrf_token %}<button type="submit" class="tablero-quitar" title="Ya se fue: sacarlo de la fila">Quitar</button></form>
+      </li>
+      {% empty %}<li class="tablero-vacio">Nadie esperando.</li>
+      {% endfor %}
+    </ul>
+  </section>
+  <section class="tablero-col">
+    <h3>Atendiendo <b>{{ tablero.atendiendo|length }}</b></h3>
+    <ul>
+      {% for p in tablero.atendiendo %}
+      <li class="tablero-turno">
+        <b class="tablero-numero">{{ p.numero }}</b>
+        <span class="tablero-quien">{{ p.nombre_visible|default:"Sin nombre" }}<small>{% if p.con %}con {{ p.con }} · {% endif %}desde {{ p.llamado|date:"H:i" }}</small></span>
+      </li>
+      {% empty %}<li class="tablero-vacio">Nadie en mostrador.</li>
+      {% endfor %}
+    </ul>
+  </section>
+  <section class="tablero-col">
+    <h3>En caja <b>{{ tablero.caja|length }}</b></h3>
+    <ul>
+      {% for p in tablero.caja %}
+      <li class="tablero-turno">
+        <b class="tablero-numero">{{ p.numero }}</b>
+        <span class="tablero-quien">{{ p.nombre_visible|default:"Sin nombre" }}<small>por pagar {{ p.total_caja|pesos }}</small></span>
+      </li>
+      {% empty %}<li class="tablero-vacio">Nada por cobrar.</li>
+      {% endfor %}
+    </ul>
+  </section>
+  <section class="tablero-col pagados">
+    <h3>Ya pagaron <b>{{ tablero.pagados|length }}</b></h3>
+    <ul>
+      {% for p in tablero.pagados %}
+      <li class="tablero-turno">
+        <b class="tablero-numero">{{ p.numero }}</b>
+        <span class="tablero-quien">{{ p.nombre_visible|default:"Sin nombre" }}<small>pagó {{ p.pagado|date:"H:i" }} · entregar</small></span>
+      </li>
+      {% empty %}<li class="tablero-vacio">Nadie en los últimos minutos.</li>
+      {% endfor %}
+    </ul>
+  </section>
+</div>

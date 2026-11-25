@@ -55,7 +55,10 @@ class MandarTests(TestCase):
             self.client.post(reverse("ticket_cliente"), {"cliente": cliente.pk})
         self.client.post(reverse("caja"), {"nip": test_mostrador.NIP, "accion": "abrir", "fondo": "500"})
         self.client.post(reverse("ticket_codigo"), {"codigo": "PH966B"})
-        r = self.client.post(reverse("ticket_cobrar"), {"nip": test_mostrador.NIP, "forma_pago": "EFECTIVO"}, follow=True)
+        self.client.post(reverse("ticket_a_caja"), {"nip": test_mostrador.NIP})
+        venta = Venta.objects.latest("pk")
+        r = self.client.post(reverse("caja_cobrar"), {"nip": test_mostrador.NIP, "forma_pago": "EFECTIVO", "folio": venta.folio},
+                             follow=True)  # la caja cobra: ahí se imprime el ticket o se manda
         return r, Venta.objects.latest("pk")
 
     def ventana(self, tipo, folio):
@@ -121,7 +124,7 @@ class MandarTests(TestCase):
 
     def test_el_ticket_de_la_venta_tambien_se_manda(self):
         r, venta = self.vender(self.taller())
-        self.assertContains(r, f'data-mandar="/mandar/remision/{venta.folio}/"')  # junto a «Imprimir remisión»
+        self.assertContains(r, f'data-mandar="/mandar/remision/{venta.folio}/"')  # en caja, junto a «Imprimir ticket»
         r = self.ventana("remision", venta.folio)
         self.assertContains(r, f'data-archivo="Remision-{venta.folio}.pdf"')
         self.assertContains(r, f"Le comparto su remisión {venta.folio} de {settings.NEGOCIO_NOMBRE} por $98. Gracias por su compra.")

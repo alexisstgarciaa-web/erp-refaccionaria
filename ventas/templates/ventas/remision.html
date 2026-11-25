@@ -47,6 +47,7 @@
     {% if venta.orden_compra %}<div><dt>Su orden de compra</dt><dd class="rem-codigo">{{ venta.orden_compra }}</dd></div>{% endif %}
     <div><dt>Pago</dt><dd>{% if venta.estado == 'POR_COBRAR' %}Contado · pendiente de pago en caja{% elif not venta.forma_pago %}Contado{% else %}{{ venta.get_forma_pago_display }}{% endif %}{% if venta.estado == 'CREDITO' %} · {{ venta.cliente.dias_credito }} días, vence {{ venta.vence|date:"j M Y" }}{% endif %}</dd></div>
     <div><dt>Atendió</dt><dd>{{ venta.usuario.get_short_name|default:venta.usuario.get_username|default:"—" }}</dd></div>
+    {% if venta.pase %}<div><dt>Turno</dt><dd>{{ venta.pase.numero }}</dd></div>{% endif %}
   </dl>
 
   <table class="rem-tabla">
@@ -67,7 +68,8 @@
   <div class="rem-pie">
     <div class="rem-notas">
       {% if venta.observaciones %}<p class="rem-observaciones"><b>Observaciones.</b> {{ venta.observaciones }}</p>{% endif %}
-      {% if venta.estado == 'POR_COBRAR' %}<p class="rem-credito"><b>Pendiente de pago.</b> Se paga en caja: {{ venta.total|pesos }}.</p>{% endif %}
+      {% if venta.estado == 'POR_COBRAR' %}<p class="rem-credito"><b>Pendiente de pago.</b> Se paga en caja{% if venta.pase %} con el turno {{ venta.pase.numero }}{% endif %}: {{ venta.total|pesos }}.</p>{% endif %}
+      {% if venta.estado == 'PAGADA' %}<p class="rem-pagado"><b>Pagado</b>{% if venta.cobrada %} en caja el {{ venta.cobrada|date:"j M Y, H:i" }}{% endif %}{% if venta.forma_pago %} · {{ venta.get_forma_pago_display }}{% endif %}{% if venta.cobrada_por %} · cobró {{ venta.cobrada_por.get_short_name|default:venta.cobrada_por.get_username }}{% endif %}. Con este ticket se entrega la mercancía.</p>{% endif %}
       {% if venta.estado == 'CREDITO' %}
       <p class="rem-credito"><b>A crédito.</b> Saldo {{ venta.saldo|pesos }}{% if abonado %} (abonado {{ abonado|pesos }}){% endif %}. Vence el {{ venta.vence|date:"j \d\e F \d\e Y" }}.</p>
       {% endif %}

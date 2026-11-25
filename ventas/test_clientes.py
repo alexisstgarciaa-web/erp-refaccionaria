@@ -169,22 +169,23 @@ class CreditoConVencidoTests(Base):
 
     def cobrar(self, forma, nip):
         self.client.post(reverse("ticket_agregar"), {"clave": f"producto:{self.filtro.pk}", "pos": "aceite"})
-        return self.client.post(reverse("ticket_cobrar"), {"forma_pago": forma, "nip": nip}, follow=True)
+        condiciones = "CREDITO" if forma == FormaPago.CREDITO else "CONTADO"
+        return self.client.post(reverse("ticket_a_caja"), {"condiciones": condiciones, "nip": nip}, follow=True)
 
     def test_mostrador(self):
         r = self.client.get(reverse("mostrador"))
         self.assertContains(r, "Debe $107 vencido · a crédito pide NIP de administrador")
-        self.assertContains(r, 'data-nip-admin-si="forma_pago:CREDITO"')
+        self.assertContains(r, 'data-nip-admin-si="condiciones:CREDITO"')
         r = self.cobrar(FormaPago.CREDITO, "4821")
         self.assertContains(r, "Ese NIP no es de administrador")
         self.assertEqual(Venta.objects.count(), 1)
         r = self.cobrar(FormaPago.CREDITO, "7305")
         self.assertContains(r, "Crédito autorizado por alexis aunque debía $107 vencido")
         self.assertEqual(Venta.objects.filter(estado=Venta.Estado.CREDITO).count(), 2)
-        # de contado sigue con el NIP de quien cobra
+        # de contado sigue con el NIP de quien la registra, y pasa a caja
         self.client.post(reverse("ticket_cliente"), {"cliente": self.taller.pk})
         r = self.cobrar(FormaPago.EFECTIVO, "4821")
-        self.assertEqual(Venta.objects.filter(forma_pago=FormaPago.EFECTIVO).count(), 1)
+        self.assertEqual(Venta.objects.filter(estado=Venta.Estado.POR_COBRAR).count(), 1)
 
     def test_sin_vencido_no_pide_administrador(self):
         Venta.objects.update(vence=timezone.localdate() + timedelta(days=5))

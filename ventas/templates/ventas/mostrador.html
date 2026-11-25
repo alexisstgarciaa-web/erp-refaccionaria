@@ -4,6 +4,31 @@
 {% block cuerpo %}con-cobro{% endblock %}
 {% block contenido %}
 
+{# Lo que se acaba de registrar: el turno con el que el cliente pasa a caja (lo primero que ve el vendedor) #}
+{% if ultima_venta %}
+{% if ultima_venta.estado == 'POR_COBRAR' %}
+<section class="recien a-caja" aria-label="Pasa a caja">
+  <p class="a-caja-turno"><span>Turno</span><b>{{ ultima_venta.pase.numero }}</b></p>
+  <div>
+    <span class="recien-etiqueta">Pasa a caja a pagar</span>
+    <b>{{ ultima_venta.total|pesos }} · {{ ultima_venta.folio }}</b>
+    <span>{{ ultima_venta.pase.quien|default:ultima_venta.cliente }}{% if ultima_venta.vehiculo %} · {{ ultima_venta.vehiculo }}{% endif %} · Con su número de turno paga en caja y regresa por su mercancía.</span>
+  </div>
+  {% if not ultima_venta.pase.llamado %}<button class="btn-sec" type="button" data-imprimir="{% url 'turno_papel' ultima_venta.pase.pk %}">Imprimir su turno</button>{% endif %}
+</section>
+{% else %}
+<section class="recien" aria-label="Venta a crédito registrada">
+  <div>
+    <span class="recien-etiqueta">Venta a crédito registrada</span>
+    <b>{{ ultima_venta.folio }} · {{ ultima_venta.total|pesos }}</b>
+    <span>{{ ultima_venta.cliente }}{% if ultima_venta.vence %} · vence el {{ ultima_venta.vence|date:"j M Y" }}{% endif %} · No pasa por caja.</span>
+  </div>
+  <a class="btn-sec" href="{% url 'venta' ultima_venta.folio %}">Ver la venta</a>
+  <button class="btn-sec" type="button" data-mandar="{% url 'mandar' 'remision' ultima_venta.folio %}">Mandar por WhatsApp o correo</button>
+</section>
+{% endif %}
+{% endif %}
+
 {# Turnos: a quién llamar (primero los clientes registrados), quién está en caja y quién ya pagó. Se actualiza sola. #}
 <section class="panel tira" aria-label="Turnos de clientes" data-vivo="{% url 'turnos_tira' %}?next={{ aqui|urlencode }}">
   {% include "ventas/_turnos_tira.html" %}
@@ -128,29 +153,6 @@
   <p class="captura-ayuda"><b>Enter</b> avanza: código › cantidad › precio › agrega · <b>↑ ↓</b> eligen sugerencia · <b>F2</b> regresa aquí · <b>F9</b> manda a caja</p>
 </form>
 
-{% if ultima_venta %}
-{% if ultima_venta.estado == 'POR_COBRAR' %}
-<section class="recien a-caja" aria-label="Pasa a caja">
-  <p class="a-caja-turno"><span>Turno</span><b>{{ ultima_venta.pase.numero }}</b></p>
-  <div>
-    <span class="recien-etiqueta">Pasa a caja a pagar</span>
-    <b>{{ ultima_venta.total|pesos }} · {{ ultima_venta.folio }}</b>
-    <span>{{ ultima_venta.pase.quien|default:ultima_venta.cliente }}{% if ultima_venta.vehiculo %} · {{ ultima_venta.vehiculo }}{% endif %} · Con su número de turno paga en caja y regresa por su mercancía.</span>
-  </div>
-  {% if not ultima_venta.pase.llamado %}<button class="btn-sec" type="button" data-imprimir="{% url 'turno_papel' ultima_venta.pase.pk %}">Imprimir su turno</button>{% endif %}
-</section>
-{% else %}
-<section class="recien" aria-label="Venta a crédito registrada">
-  <div>
-    <span class="recien-etiqueta">Venta a crédito registrada</span>
-    <b>{{ ultima_venta.folio }} · {{ ultima_venta.total|pesos }}</b>
-    <span>{{ ultima_venta.cliente }}{% if ultima_venta.vence %} · vence el {{ ultima_venta.vence|date:"j M Y" }}{% endif %} · No pasa por caja.</span>
-  </div>
-  <a class="btn-sec" href="{% url 'venta' ultima_venta.folio %}">Ver la venta</a>
-  <button class="btn-sec" type="button" data-mandar="{% url 'mandar' 'remision' ultima_venta.folio %}">Mandar por WhatsApp o correo</button>
-</section>
-{% endif %}
-{% endif %}
 {% if mandar %}<span hidden data-mandar-abrir="{{ mandar }}"></span>{% endif %}
 
 {# Sin vehículo elegido, el ticket ocupa todo el ancho; con vehículo, la hoja de piezas va a un lado #}

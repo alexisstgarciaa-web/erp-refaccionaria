@@ -5,7 +5,7 @@ from django.urls import reverse
 
 from . import nip as nips
 from .cifras import ConComas
-from .models import Abono, Cliente, CodigoPostal, Nip, PedidoCliente, TicketGuardado, Turno, Venta, VentaLinea
+from .models import Abono, Cliente, CodigoPostal, Nip, Pase, PedidoCliente, TicketGuardado, Turno, Venta, VentaLinea
 
 
 @admin.register(Cliente)
@@ -135,12 +135,19 @@ class NipForm(forms.ModelForm):
 
     class Meta:
         model = Nip
-        fields = ["usuario"]
+        fields = ["usuario", "cobra"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance.pk:  # al editar (p. ej. para quitarle el cobro) el NIP se deja igual si no se teclea otro
+            for campo in ("nip", "repetir"):
+                self.fields[campo].required = False
+            self.fields["nip"].help_text = "Déjalo vacío para no cambiarlo. " + self.fields["nip"].help_text
 
     def clean(self):
         datos = super().clean()
         usuario = datos.get("usuario") or getattr(self.instance, "usuario", None)
-        if datos.get("nip") and datos.get("nip") != datos.get("repetir"):
+        if (datos.get("nip") or datos.get("repetir")) and datos.get("nip") != datos.get("repetir"):
             raise ValidationError("Los dos NIP no coinciden.")
         if usuario and datos.get("nip"):
             self.instance.huella = nips.revisar(usuario, datos["nip"])
@@ -152,7 +159,8 @@ class NipAdmin(ConComas, admin.ModelAdmin):
     """El administrador asigna o cambia el NIP de cada persona. Nunca se muestra: solo se reemplaza."""
 
     form = NipForm
-    list_display = ["usuario", "es_admin", "cambiado"]
+    list_display = ["usuario", "es_admin", "cobra", "cambiado"]
+    list_filter = ["cobra"]
     search_fields = ["usuario__username", "usuario__first_name", "usuario__last_name"]
 
     @admin.display(boolean=True, description="Administrador")
@@ -161,3 +169,22 @@ class NipAdmin(ConComas, admin.ModelAdmin):
 
     def get_readonly_fields(self, request, obj=None):
         return ["usuario"] if obj else []
+
+
+@admin.register(Pase)
+class PaseAdmin(admin.ModelAdmin):
+    """Los turnos de clientes, solo para consultar: se dan en Turnos o al mandar a caja."""
+
+    list_display = ["dia", "numero", "quien", "cliente", "creado", "llamado", "atiende", "cerrado"]
+    list_filter = ["dia"]
+    search_fields = ["nombre", "cliente__nombre"]
+    date_hierarchy = "dia"
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False

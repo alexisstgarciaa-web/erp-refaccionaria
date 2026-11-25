@@ -86,8 +86,10 @@ class EmitirTests(RemisionesBase):
         # no entra al corte hasta que se cobra
         self.assertEqual(esperado_en_caja(self.turno)[FormaPago.EFECTIVO], D("500"))
         caja = self.client.get(reverse("caja"))
-        self.assertContains(caja, "Remisiones por cobrar")
+        self.assertContains(caja, "1 por cobrar")
         self.assertContains(caja, v.folio)
+        self.assertEqual(v.pase.numero, 1)  # sin turno, se le da el que sigue
+        self.assertContains(caja, 'data-turno="1"')
         self.assertContains(caja, 'title="Remisiones de contado por cobrar">1<')
 
     def test_el_folio_rem_lleva_su_propia_serie(self):

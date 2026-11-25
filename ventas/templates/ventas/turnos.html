@@ -1,0 +1,63 @@
+{% extends "ventas/base.html" %}
+{% load erp static %}
+{% block titulo %}Turnos{% endblock %}
+{% block contenido %}
+<header class="pagina-titulo">
+  <h1>Turnos</h1>
+  <p>El cliente toma su turno al llegar, un vendedor lo llama y con ese mismo número paga en caja. Los clientes registrados pasan antes.</p>
+</header>
+
+{% if nuevo %}
+<section class="recien a-caja" aria-label="Turno dado">
+  <p class="a-caja-turno"><span>Turno</span><b>{{ nuevo.numero }}</b></p>
+  <div>
+    <span class="recien-etiqueta">Turno dado</span>
+    <b>{{ nuevo.quien|default:"Sin nombre" }}</b>
+    <span>{% if nuevo.cliente_id %}Cliente registrado {{ nuevo.cliente.folio }}: pasa antes.{% else %}Pasa en su orden de llegada.{% endif %}</span>
+  </div>
+  <button class="btn-primario" type="button" data-imprimir="{{ papel_url }}" data-imprimir-al-abrir="turno">Imprimir su papelito</button>
+</section>
+{% endif %}
+
+<section class="panel bloque turnos-dar">
+  <h2>Dar un turno</h2>
+  <p>Si el cliente tiene número de cliente (o su celular está registrado), tecléalo: queda a su nombre y pasa antes.</p>
+  <form method="post" class="formulario turnos-forma" data-enter="normal">{% csrf_token %}
+    <label class="campo">Número de cliente o celular <small>si tiene</small>
+      <input name="numero_cliente" inputmode="numeric" maxlength="30" autocomplete="off" value="{{ intento.numero_cliente }}" placeholder="12 o 4421234567" autofocus></label>
+    <label class="campo">Nombre <small>opcional</small>
+      <input name="nombre" maxlength="60" autocomplete="off" value="{{ intento.nombre }}" placeholder="Cómo se llama"></label>
+    <button class="btn" type="submit">Dar turno</button>
+  </form>
+  <label class="caja-imprime"><input type="checkbox" data-imprimir-recordar="turno" checked> Imprimir el papelito al dar el turno</label>
+</section>
+
+<section class="panel bloque">
+  <h2>La fila de hoy</h2>
+  <div data-vivo="{% url 'turnos_tablero' %}">
+    {% include "ventas/_turnos_tablero.html" %}
+  </div>
+</section>
+
+<section class="panel bloque turnos-pantallas">
+  <h2>Pantallas para el cliente</h2>
+  <p>Van en un aparato aparte y no piden usuario ni contraseña. Entra a esta página desde ese aparato y toca «Dejar este aparato…»: cierra tu sesión ahí y lo deja solo con esa pantalla, sin acceso al resto del sistema.</p>
+  <div class="turnos-pantalla">
+    <div><b>Toma tu turno</b>
+      <span>Tableta o pantalla táctil a la entrada, con la impresora de papelitos. Pregunta si tiene número de cliente.</span></div>
+    <form method="post" action="{% url 'turnos_dejar' 'tomar' %}">{% csrf_token %}
+      <button class="btn-sec" type="submit">Dejar este aparato con «Toma tu turno»</button>
+      <button class="btn-sec" type="submit" name="papel" value="no">Igual, pero sin papelito</button>
+    </form>
+    <a href="{{ kiosco_url }}" target="_blank" rel="noopener">Solo verla</a>
+  </div>
+  <div class="turnos-pantalla">
+    <div><b>Llamados</b>
+      <span>La tele de la sala: enseña a quién se llama y lo dice en voz alta.</span></div>
+    <form method="post" action="{% url 'turnos_dejar' 'llamados' %}">{% csrf_token %}
+      <button class="btn-sec" type="submit">Dejar este aparato con «Llamados»</button>
+    </form>
+    <a href="{{ pantalla_url }}" target="_blank" rel="noopener">Solo verla</a>
+  </div>
+</section>
+{% endblock %}

@@ -41,6 +41,15 @@ class MostradorTests(TestCase):
         self.client.force_login(self.user)
         self.veh = m.Vehiculo(2003, "Nissan", "Tsuru", "1.6")
 
+    def a_caja(self, nip=NIP, **datos):
+        """El vendedor registra el ticket: de contado pasa a caja; con condiciones=CREDITO, a crédito."""
+        return self.client.post(reverse("ticket_a_caja"), {"nip": nip, **datos}, follow=True)
+
+    def cobrar(self, *ventas, nip=NIP, forma="EFECTIVO", **datos):
+        """La caja cobra esas ventas en un solo pago."""
+        return self.client.post(reverse("caja_cobrar"), {"nip": nip, "forma_pago": forma,
+                                                         "folio": [v.folio for v in ventas], **datos}, follow=True)
+
     def test_niveles_mis_productos_mandan_y_la_lista_llena_huecos(self):
         t, otras = m.opciones_de(self.veh, m.POR_CLAVE["aceite"], self.mostrador)
         self.assertEqual(t["STD"].codigo, "PH966B")
@@ -58,7 +67,7 @@ class MostradorTests(TestCase):
         self.assertContains(r, "PH966B")
         self.assertContains(r, "Afinación estándar")
         self.assertContains(r, 'class="estado pedido"')
-        self.assertContains(r, "Total a cobrar")
+        self.assertContains(r, "Total · se paga en caja")
         # el vehículo queda en recientes
         self.assertEqual(self.client.session["recientes"][0]["modelo"], "Tsuru")
         # con vehículo elegido hay cómo limpiarlo; sin vehículo, no
@@ -86,9 +95,7 @@ class MostradorTests(TestCase):
         r = self.client.get(reverse("mostrador"), {"armadora": "Marca que no existe", "anio": 2003})
         self.assertEqual(r.context["paso"], "marca")
 
-    def test_cobrar_vende_lo_que_hay_y_pide_lo_que_no(self):
-        abrir = self.client.post(reverse("caja"), {"nip": NIP, "accion": "abrir", "fondo": "500"})
-        self.assertRedirects(abrir, reverse("mostrador"), fetch_redirect_response=False)
+    def test_a_caja_registra_lo_que_hay_y_pide_lo_que_no(self):
         base = {"anio": 2003, "armadora": "Nissan", "modelo": "Tsuru", "litros": "1.6"}
         fram = f"producto:{self.fram.pk}"
         ca = f"partida:{PartidaListaProveedor.objects.get(codigo='CA6900').pk}"
@@ -98,9 +105,15 @@ class MostradorTests(TestCase):
         self.client.post(reverse("ticket_agregar"), {"clave": ca, "pos": "aire", "nivel": "PRE", **base})
         self.client.post(reverse("ticket_cantidad", args=[0]), {"cantidad": "2"})
 
-        r = self.client.post(reverse("ticket_cobrar"), {"nip": NIP, "forma_pago": "EFECTIVO", **base}, follow=True)
+        r = self.a_caja(**base)
         venta = Venta.objects.get()
         self.assertEqual((venta.total, venta.lineas.get().cantidad), (D("196.00"), D("2")))
+        # el vendedor no cobra: queda por cobrar en caja con el turno del cliente, sin caja ni forma de pago
+        self.assertEqual((venta.estado, venta.forma_pago, venta.turno, venta.saldo, venta.pase.numero),
+                         ("POR_COBRAR", "", None, D("196.00"), 1))
+        self.assertContains(r, "Pasa a caja a pagar")
+        self.assertContains(r, '<p class="a-caja-turno"><span>Turno</span><b>1</b></p>', html=True)
+        self.assertContains(r, f"$196 · {venta.folio}")
         self.fram.refresh_from_db()
         self.assertEqual(self.fram.existencia, D("8"))
         oc = OrdenCompra.objects.get()
@@ -115,34 +128,38 @@ class MostradorTests(TestCase):
         self.assertContains(r, oc.folio)
         self.assertEqual(self.client.session["ticket"]["lineas"], [])
 
-    def test_sin_caja_abierta_no_cobra(self):
+    def test_sin_caja_abierta_se_registra_pero_no_se_cobra(self):
         self.client.post(reverse("ticket_agregar"), {"clave": f"producto:{self.fram.pk}", "pos": "aceite"})
-        r = self.client.post(reverse("ticket_cobrar"), {"nip": NIP, "forma_pago": "EFECTIVO"})
-        self.assertRedirects(r, reverse("caja"), fetch_redirect_response=False)
-        self.assertFalse(Venta.objects.exists())
+        self.a_caja()  # el mostrador no necesita caja abierta
+        venta = Venta.objects.get()
+        r = self.cobrar(venta)
+        self.assertContains(r, "Abre la caja para cobrar")
+        venta.refresh_from_db()
+        self.assertEqual(venta.estado, Venta.Estado.POR_COBRAR)
 
     def test_credito_solo_a_clientes_con_credito(self):
-        self.client.post(reverse("caja"), {"nip": NIP, "accion": "abrir", "fondo": "0"})
         self.client.post(reverse("ticket_agregar"), {"clave": f"producto:{self.fram.pk}", "pos": "aceite"})
-        self.client.post(reverse("ticket_cobrar"), {"nip": NIP, "forma_pago": "CREDITO"})
+        self.a_caja(condiciones="CREDITO")
         self.assertFalse(Venta.objects.exists())
         taller = Cliente.objects.create(nombre="Taller Ruiz", lista_precio=self.mostrador, dias_credito=15, limite_credito=1000)
         self.client.post(reverse("ticket_cliente"), {"cliente": taller.pk})
-        self.client.post(reverse("ticket_cobrar"), {"nip": NIP, "forma_pago": "CREDITO"})
-        self.assertEqual(Venta.objects.get().estado, Venta.Estado.CREDITO)
+        self.a_caja(condiciones="CREDITO")
+        venta = Venta.objects.get()
+        self.assertEqual((venta.estado, venta.pase), (Venta.Estado.CREDITO, None))  # a crédito no pasa por caja
         # el siguiente cliente ya no hereda al taller ni su crédito
         self.assertEqual(m.Ticket(self.client.session).cliente.nombre, "Público en general")
 
     def test_corte_de_caja(self):
         self.client.post(reverse("caja"), {"nip": NIP, "accion": "abrir", "fondo": "500"})
         self.client.post(reverse("ticket_agregar"), {"clave": f"producto:{self.fram.pk}", "pos": "aceite"})
-        self.client.post(reverse("ticket_cobrar"), {"nip": NIP, "forma_pago": "EFECTIVO"})
+        self.a_caja()
+        self.cobrar(Venta.objects.get())
         r = self.client.post(reverse("caja"), {"nip": NIP, "accion": "cerrar", "efectivo": "590", "tarjeta": "0", "transferencia": "0"},
                              follow=True)
         turno = Turno.objects.get()
         self.assertIsNotNone(turno.cerrado)
         self.assertEqual(turno.diferencia, D("-8.00"))  # esperaba 500 + 98
-        self.assertContains(r, "Corte del turno")
+        self.assertContains(r, "Corte de caja")
 
     def test_pide_entrar(self):
         self.client.logout()
@@ -248,8 +265,7 @@ class MostradorTests(TestCase):
         # al cobrar se respeta el precio tecleado, también en lo que queda sobre pedido
         self.client.post(reverse("ticket_precio", args=[0]), {"precio": "115.50"})
         self.client.post(url, {"codigo": "GP-37", "cantidad": "1", "precio": "130"})
-        self.client.post(reverse("caja"), {"nip": NIP, "accion": "abrir", "fondo": "500"})
-        self.client.post(reverse("ticket_cobrar"), {"nip": NIP, "forma_pago": "EFECTIVO"})
+        self.a_caja()
         venta = Venta.objects.get()
         self.assertEqual(venta.lineas.get().precio_unitario, D("115.50"))
         self.assertEqual(venta.total, D("231.00"))
@@ -283,15 +299,22 @@ class MostradorTests(TestCase):
         self.client.post(reverse("caja"), {"nip": NIP, "accion": "abrir", "fondo": "500"})
         self.client.post(reverse("ticket_agregar"), {"clave": f"producto:{self.fram.pk}"})
         html = self.client.get("/").content.decode()
-        self.assertContains(self.client.get("/"), 'id="paga-con"')
+        self.assertNotIn('id="paga-con"', html)  # en el mostrador ya no se cobra
+        self.assertIn('id="a-nombre"', html)  # se le pregunta el nombre para que caja lo ubique
         self.assertRegex(html, r'id="codigo"[^>]*autofocus')  # con piezas en el ticket, el código
-        # no alcanza: no cobra
-        r = self.client.post(reverse("ticket_cobrar"), {"nip": NIP, "forma_pago": "EFECTIVO", "paga_con": "50"}, follow=True)
+        self.a_caja(nombre="  Juan   Pérez ")
+        venta = Venta.objects.get()
+        self.assertEqual(venta.pase.nombre, "Juan Pérez")
+        # en caja: si no alcanza, no cobra
+        r = self.cobrar(venta, paga_con="50")
         self.assertContains(r, "Paga con $50 y son $98: faltan $48.")
-        self.assertFalse(Venta.objects.exists())
-        r = self.client.post(reverse("ticket_cobrar"), {"nip": NIP, "forma_pago": "EFECTIVO", "paga_con": "200"}, follow=True)
+        venta.refresh_from_db()
+        self.assertEqual(venta.estado, Venta.Estado.POR_COBRAR)
+        r = self.cobrar(venta, paga_con="200")
         self.assertContains(r, "Cambio $102")
-        self.assertEqual(Venta.objects.get().total, D("98"))
+        self.assertContains(r, "Juan Pérez")
+        venta.refresh_from_db()
+        self.assertEqual((venta.estado, venta.total, venta.forma_pago), (Venta.Estado.PAGADA, D("98"), "EFECTIVO"))
 
     def test_credito_preseleccionado(self):
         taller = Cliente.objects.create(nombre="Taller Ramírez", lista_precio=self.mostrador, dias_credito=15,
@@ -300,7 +323,8 @@ class MostradorTests(TestCase):
         self.client.post(reverse("ticket_agregar"), {"clave": f"producto:{self.fram.pk}"})
         html = self.client.get("/").content.decode()
         self.assertRegex(html, r'value="CREDITO" checked')
-        self.assertNotRegex(html, r'value="EFECTIVO" checked')
+        self.assertNotRegex(html, r'value="CONTADO" checked')
+        self.assertIn("Registrar a crédito", html)
 
     def test_leer_captura(self):
         self.assertEqual(m.leer_captura("4*PH966B"), ("PH966B", D("4")))
@@ -314,13 +338,20 @@ class MostradorTests(TestCase):
         ca = f"partida:{PartidaListaProveedor.objects.get(codigo='CA6900').pk}"
         self.client.post(reverse("ticket_agregar"), {"clave": f"producto:{self.fram.pk}", "pos": "aceite"})
         self.client.post(reverse("ticket_agregar"), {"clave": ca, "pos": "aire"})
-        r = self.client.post(reverse("ticket_cobrar"), {"nip": NIP, "forma_pago": "EFECTIVO", **base}, follow=True)
+        r = self.a_caja(**base)
         venta = Venta.objects.get()
         self.assertEqual(venta.vehiculo, "Nissan Tsuru 2003 · 1.6 L")
         self.assertEqual([p["codigo"] for p in venta.pedido], ["CA6900"])
-        # al volver al mostrador se ofrece imprimir la remisión
-        self.assertContains(r, reverse("remision", args=[venta.folio]) + "?imprimir=1")
+        # al volver al mostrador no se imprime nada: se le dice su turno y pasa a caja
+        self.assertNotContains(r, "?imprimir=1")
+        self.assertContains(r, 'aria-label="Pasa a caja"')
         r = self.client.get(reverse("remision", args=[venta.folio]))
+        self.assertContains(r, "<dt>Turno</dt><dd>1</dd>", html=True)
+        self.assertContains(r, "pendiente de pago en caja")
+        self.assertNotContains(r, "Con este ticket se entrega la mercancía")
+        self.cobrar(venta)
+        r = self.client.get(reverse("remision", args=[venta.folio]))
+        self.assertContains(r, "Con este ticket se entrega la mercancía")
         for texto in (venta.folio, "Remisión", "Nissan Tsuru 2003", "PH966B", "Quedó sobre pedido", "CA6900",
                       "$98", "IVA 16%", "no es un comprobante fiscal", "Recibí de conformidad"):
             self.assertContains(r, texto)
@@ -445,8 +476,7 @@ class MostradorTests(TestCase):
         self.client.post(reverse("ticket_agregar"), {"clave": f"producto:{self.fram.pk}", "pos": "aceite", **base})
         r = self.client.get(reverse("mostrador"), base)
         self.assertContains(r, 'form="cobro-form"')  # «para avisarle» va con el cobro
-        r = self.client.post(reverse("ticket_cobrar"), {"nip": NIP, "forma_pago": "EFECTIVO", "contacto": "Sr. Pérez 442 111 2233", **base},
-                             follow=True)
+        r = self.a_caja(contacto="Sr. Pérez 442 111 2233", **base)
         self.assertContains(r, "Lo ves en Pedidos")
         p = PedidoCliente.objects.get()
         venta, oc = Venta.objects.get(), OrdenCompra.objects.get()
@@ -455,7 +485,7 @@ class MostradorTests(TestCase):
         r = self.client.get(reverse("pedidos"))
         self.assertContains(r, "Sr. Pérez 442 111 2233")
         self.assertContains(r, f"{oc.folio} sin enviar")
-        self.assertNotContains(r, 'class="insignia"')
+        self.assertNotContains(r, "Ya llegaron: hay que avisar")
         # todavía no llega: no se puede entregar
         r = self.client.post(reverse("pedido_entregar", args=[p.pk]), follow=True)
         self.assertContains(r, "Todavía no llega")
@@ -474,7 +504,7 @@ class MostradorTests(TestCase):
         t = m.Ticket(self.client.session)
         self.assertEqual((t.cliente.nombre, [(ln.opcion.codigo, ln.precio, ln.pedido) for ln in t.lineas()]),
                          ("Público en general", [("CA6900", D("104"), p.pk)]))
-        self.client.post(reverse("ticket_cobrar"), {"nip": NIP, "forma_pago": "EFECTIVO"})
+        self.a_caja()
         p.refresh_from_db()
         self.assertEqual(p.estado, PedidoCliente.Estado.ENTREGADO)
         self.assertEqual(p.venta_entrega.total, D("104"))
@@ -485,7 +515,7 @@ class MostradorTests(TestCase):
         self.client.post(reverse("caja"), {"nip": NIP, "accion": "abrir", "fondo": "0"})
         for _ in range(2):
             self.client.post(reverse("ticket_codigo"), {"codigo": "GP-37"})
-            self.client.post(reverse("ticket_cobrar"), {"nip": NIP, "forma_pago": "EFECTIVO"})
+            self.a_caja()
         p1, p2 = PedidoCliente.objects.order_by("pk")
         self.assertIsNone(p1.venta)  # todo fue sobre pedido: no hubo venta
         oc = OrdenCompra.objects.get()
@@ -511,17 +541,25 @@ class MostradorTests(TestCase):
         t = Turno.objects.get()
         self.assertEqual((t.usuario, t.abierto_por), (self.user, self.user))
         self.client.post(reverse("ticket_agregar"), {"clave": f"producto:{self.fram.pk}", "pos": "aceite"})
-        self.assertContains(self.client.get(reverse("mostrador")), 'data-nip="vendedor" data-nip-para="Cobrar $98"')
-        r = self.client.post(reverse("ticket_cobrar"), {"forma_pago": "EFECTIVO"}, follow=True)
+        self.assertContains(self.client.get(reverse("mostrador")),
+                            'data-nip="vendedor"\n        data-nip-para="Registrar la venta de $98"')
+        r = self.a_caja(nip="")
         self.assertContains(r, "Teclea tu NIP")
         self.assertFalse(Venta.objects.exists())
         self.assertEqual(len(self.client.session["ticket"]["lineas"]), 1)  # el ticket sigue ahí
-        # otro vendedor en la misma caja firma la venta con su NIP
+        # otro vendedor en la misma computadora firma la venta con su NIP; todavía no es de ninguna caja
         pedro = get_user_model().objects.create_user("pedro", first_name="Pedro")
         nips.asignar(pedro, "5094")
-        self.client.post(reverse("ticket_cobrar"), {"forma_pago": "EFECTIVO", "nip": "5094"})
+        self.a_caja(nip="5094")
         v = Venta.objects.get()
-        self.assertEqual((v.usuario, v.turno), (pedro, t))
+        self.assertEqual((v.usuario, v.turno, v.cobrada_por), (pedro, None, None))
+        # la caja la cobra con el NIP de quien cobra: entra a su corte y queda quién cobró
+        r = self.cobrar(v, nip="")
+        self.assertContains(r, "Teclea tu NIP")
+        self.cobrar(v)
+        v.refresh_from_db()
+        self.assertEqual((v.usuario, v.turno, v.cobrada_por, v.estado), (pedro, t, self.user, Venta.Estado.PAGADA))
+        self.assertIsNotNone(v.cobrada)
         self.assertContains(self.client.get(reverse("remision", args=[v.folio])), "Pedro")
         self.client.post(reverse("caja"), {"nip": "5094", "accion": "cerrar", "efectivo": "98", "tarjeta": "0", "transferencia": "0"})
         t.refresh_from_db()

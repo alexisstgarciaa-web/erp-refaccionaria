@@ -1,0 +1,36 @@
+{% load static %}<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Turnos · {{ negocio }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,400..900;1,62..125,400..900&display=swap">
+<link rel="stylesheet" href="{% static 'ventas/erp.css' %}">
+<link rel="icon" href="{% url 'icono' %}" type="image/svg+xml">
+</head>
+<body class="pantalla" data-datos="{{ datos_url }}">
+<header class="pantalla-cabeza">
+  <span class="sello-negocio" aria-hidden="true">{{ negocio|slice:":1" }}</span><b>{{ negocio }}</b>
+  <span class="pantalla-hora" id="p-hora"></span>
+</header>
+<main class="pantalla-cuerpo">
+  <section class="pantalla-actual" id="p-actual" aria-live="assertive">
+    <p class="pantalla-etiqueta">Turno</p>
+    <p class="pantalla-numero" id="p-numero">—</p>
+    <p class="pantalla-quien" id="p-quien">Aún no se llama a nadie</p>
+    <p class="pantalla-con" id="p-con"></p>
+  </section>
+  <aside class="pantalla-lista">
+    <h2>Llamados antes</h2>
+    <ol id="p-lista"></ol>
+    <p class="pantalla-espera">En espera <b id="p-espera">0</b></p>
+  </aside>
+</main>
+<button class="pantalla-sonido" id="p-sonido" type="button">Toca aquí para activar el sonido</button>
+<p class="pantalla-aviso" id="p-aviso" hidden>Sin conexión. Reintentando…</p>
+<script src="{% static 'ventas/pantalla.js' %}" defer></script>
+</body>
+</html>

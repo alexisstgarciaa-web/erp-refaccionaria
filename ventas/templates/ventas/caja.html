@@ -41,7 +41,7 @@
     <h2>Por cobrar</h2>
     <label class="campo">Turno o nombre del cliente
       <input id="caja-buscar" autocomplete="off" spellcheck="false" inputmode="search" placeholder="27 o Juan" autofocus></label>
-    <label class="caja-imprime"><input type="checkbox" id="caja-imprime" checked> Imprimir el ticket al cobrar</label>
+    <label class="caja-imprime"><input type="checkbox" data-imprimir-recordar="ticket" checked> Imprimir el ticket al cobrar</label>
   </div>
   <p class="caja-ayuda">Teclea el turno y <b>Enter</b> · escribe con cuánto paga y <b>Enter</b> · tu NIP. Las remisiones del mismo turno se cobran juntas.</p>
   <div data-vivo="{% url 'caja_por_cobrar' %}" id="caja-cuentas">

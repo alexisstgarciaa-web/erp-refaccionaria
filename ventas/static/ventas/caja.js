@@ -54,13 +54,4 @@
     campo.focus();
     campo.select();
   });
-
-  // imprimir el ticket al cobrar: se recuerda en este aparato
-  const imprime = document.getElementById("caja-imprime");
-  if (imprime) {
-    try { imprime.checked = localStorage.getItem("imprimir-ticket") !== "no"; } catch { /* sin almacenamiento */ }
-    imprime.addEventListener("change", () => {
-      try { localStorage.setItem("imprimir-ticket", imprime.checked ? "si" : "no"); } catch { /* sin almacenamiento */ }
-    });
-  }
 })();

@@ -48,6 +48,7 @@
         <label><input type="radio" name="condiciones" value="CONTADO"{% if datos.condiciones != 'CREDITO' %} checked{% endif %}><span>Contado</span></label>
         <label><input type="radio" name="condiciones" value="CREDITO"{% if datos.condiciones == 'CREDITO' %} checked{% endif %}{% if not cliente_actual.dias_credito %} disabled{% endif %}><span>Crédito</span></label>
       </fieldset>
+      <label class="campo rem-turno">Turno del cliente <input name="turno" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="Si ya trae uno"></label>
       <label class="campo">Orden de compra del cliente <input name="orden_compra" value="{{ datos.orden_compra }}" maxlength="40" autocomplete="off" placeholder="Opcional"></label>
       <label class="campo">Vehículo o unidad <input name="vehiculo" value="{{ datos.vehiculo }}" maxlength="120" autocomplete="off" placeholder="Opcional: Tsuru 2015, unidad 14"></label>
       <label class="campo rem-obs">Observaciones <input name="observaciones" value="{{ datos.observaciones }}" maxlength="300" autocomplete="off" placeholder="Opcional: entregar en taller, recibe Juan"></label>

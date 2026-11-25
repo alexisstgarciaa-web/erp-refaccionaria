@@ -131,7 +131,10 @@ def de_hoy():
             p.total_caja = sum((v.total for v in por_cobrar), Decimal(0))
             res["caja"].append(p)
         elif p.ventas_vivas:
-            p.pagado = max((v.cobrada or v.fecha) for v in p.ventas_vivas)
+            pagadas = [v for v in p.ventas_vivas if v.estado == Venta.Estado.PAGADA]
+            if not pagadas:
+                continue  # se lo llevó a crédito: no pasa por caja y el vendedor le entrega ahí mismo
+            p.pagado = max((v.cobrada or v.fecha) for v in pagadas)
             if ahora - p.pagado <= timedelta(minutes=MINUTOS_PAGADO):
                 res["pagados"].append(p)
         elif p.cerrado:
@@ -208,6 +211,12 @@ def por_cobrar():
 
 def clave_pantalla():
     return salted_hmac("erp.turnos.pantalla", "llamados").hexdigest()[:20]
+
+
+def clave_kiosco():
+    """La de la pantalla donde el cliente toma su turno: también va sin sesión, para que en esa tableta no quede
+    abierto el sistema."""
+    return salted_hmac("erp.turnos.kiosco", "tomar").hexdigest()[:20]
 
 
 def refrescar_pantalla():

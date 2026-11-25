@@ -20,7 +20,9 @@
     revisar(f);
   };
 
-  document.querySelectorAll("form.cobrar-rem").forEach(mostrar);
+  const todas = () => document.querySelectorAll("form.cobrar-rem").forEach(mostrar);
+  todas();
+  document.addEventListener("vivo:cambio", todas); // la lista de Caja se actualiza sola: las nuevas también
   document.addEventListener("change", (e) => {
     const f = e.target.closest && e.target.closest("form.cobrar-rem");
     if (f && e.target.name === "forma_pago") mostrar(f);
