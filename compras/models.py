@@ -99,6 +99,18 @@ class PartidaListaProveedor(models.Model):
         ACEITE = "ACEITE", "Filtro de aceite"
         AIRE = "AIRE", "Filtro de aire"
         GASOLINA = "GASOLINA", "Filtro de gasolina"
+        # (25-nov-2026) empaques y clutch, de las listas DC, FRACO, Perfection, NAMCO y LUK
+        JUEGO = "JUEGO", "Juego de empaques"
+        CABEZA = "CABEZA", "Empaque de cabeza"
+        PUNTERIAS = "PUNTERIAS", "Empaque de punterías"
+        MULTIPLE = "MULTIPLE", "Empaque de múltiple"
+        CARTER = "CARTER", "Empaque de cárter"
+        DISTRIB = "DISTRIB", "Empaque de distribución"
+        RETEN = "RETEN", "Retenes"
+        SELLOS = "SELLOS", "Sellos de válvula"
+        EMPAQUE = "EMPAQUE", "Otros empaques"
+        CLUTCH = "CLUTCH", "Kit de clutch"
+        CLUTCH_PZA = "CLUTCH_PZA", "Partes de clutch"
         OTRO = "OTRO", "Otro"
 
     proveedor = models.ForeignKey(Proveedor, on_delete=models.CASCADE, related_name="partidas_lista")

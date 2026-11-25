@@ -200,6 +200,13 @@ def generar(partidas):
     return len(filas)
 
 
+# (25-nov-2026) El selector del mostrador solo arma tarjetas de filtros. Las listas de empaques y clutch
+# también traen vehículos, pero mientras el mostrador no tenga lugar para esas piezas no deben
+# mover las marcas, años y modelos que ofrece (saldría un vehículo que solo tiene empaques y
+# las tarjetas de filtros quedarían vacías).
+TIPOS_MOSTRADOR = ("ACEITE", "AIRE", "GASOLINA")
+
+
 AÑO_RE = re.compile(r"^(?:(19|20)\d{2}|\d{2})$")
 LITROS_RE = re.compile(r"^\d\.\d$")
 
@@ -225,15 +232,18 @@ def leer_consulta(texto):
     return palabras, anio, litros
 
 
-def buscar(texto):
+def buscar(texto, tipos=None):
     """Vehículos de las listas de proveedor que coinciden con la consulta. Cada palabra debe aparecer
-    en la armadora o en el modelo; el año debe caer dentro del rango; los litros, en el motor."""
+    en la armadora o en el modelo; el año debe caer dentro del rango; los litros, en el motor.
+    `tipos` limita a esos tipos de partida (el mostrador pasa TIPOS_MOSTRADOR)."""
     from django.db.models import Q
 
     from .models import AplicacionProveedor
 
     palabras, anio, litros = leer_consulta(texto)
     base = AplicacionProveedor.objects.select_related("partida", "partida__proveedor")
+    if tipos:
+        base = base.filter(partida__tipo__in=tipos)
     if anio:
         base = base.filter(anio_desde__lte=anio, anio_hasta__gte=anio)
     if litros:
@@ -293,7 +303,7 @@ def opciones(anio=None, armadora=None, modelo=None):
 
     from .models import AplicacionProveedor
 
-    qs = AplicacionProveedor.objects.filter(coincide(anio, armadora, modelo))
+    qs = AplicacionProveedor.objects.filter(coincide(anio, armadora, modelo), partida__tipo__in=TIPOS_MOSTRADOR)
     if armadora and modelo:  # último paso: litros del motor ("1.6"), sin contar textos sin motor
         cuenta = {}
         for motor, partida in qs.exclude(motor="").values_list("motor", "partida_id").distinct():
@@ -320,7 +330,7 @@ def anios_de(armadora, hasta=None):
 
     hasta = hasta or date.today().year + 1
     anios = set()
-    for desde, fin in (AplicacionProveedor.objects.filter(armadora=armadora)
+    for desde, fin in (AplicacionProveedor.objects.filter(armadora=armadora, partida__tipo__in=TIPOS_MOSTRADOR)
                        .values_list("anio_desde", "anio_hasta").distinct()):
         anios.update(range(desde, min(fin, hasta) + 1))
     return sorted(anios, reverse=True)

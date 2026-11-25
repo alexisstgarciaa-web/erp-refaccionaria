@@ -23,7 +23,7 @@ from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.decorators.http import require_POST
 
 from catalogo.models import ListaPrecio
-from compras.aplicaciones import buscar, clave_modelo, leer_consulta, selector
+from compras.aplicaciones import TIPOS_MOSTRADOR, buscar, clave_modelo, leer_consulta, selector
 from compras.models import PartidaListaProveedor
 
 from . import clientes as cli
@@ -96,7 +96,7 @@ def _vehiculo_de_busqueda(texto):
     palabras, anio, litros = leer_consulta(texto)
     if not anio:
         return None, "Escribe también el año, por ejemplo «tsuru 2003»."
-    mejor = (buscar(texto).values("armadora", "modelo_base").annotate(n=Count("partida", distinct=True))
+    mejor = (buscar(texto, TIPOS_MOSTRADOR).values("armadora", "modelo_base").annotate(n=Count("partida", distinct=True))
              .order_by("-n").first())
     if not mejor:
         return None, f"No encontré «{texto}» en las listas. Prueba con las listas de marca, año y modelo."

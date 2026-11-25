@@ -152,3 +152,22 @@ class BuscarPorVehiculoTests(TestCase):
         agregar_a_catalogo(PartidaListaProveedor.objects.get(codigo="PH966B"))
         self.assertEqual(Vehiculo.objects.filter(modelo="Tsuru").count(), 2)  # rangos distintos, vehículos distintos
         self.assertEqual(Aplicacion.objects.get(producto=producto, vehiculo__modelo="Tsuru").posicion, "Filtro de aceite")
+
+
+class EmpaquesYClutchTests(TestCase):
+    """(25-nov-2026) Listas de empaques y clutch: el tipo viene con su nombre y sus vehículos
+    sirven para buscar, pero no mueven el selector del mostrador (que solo arma filtros)."""
+
+    def test_tipo_por_nombre_vehiculos_y_selector_intacto(self):
+        importar("NAMCO", [lista([["NAK06878S", "Kit de clutch", "KIT DE CLUTCH", "NAMCO",
+                                   "KIT NISSAN TSURU L4 1.6 (92-17)", 1517.24, ""],
+                                  ["FS-100", "Juego de empaques", "EMPAQUE JUEGO COMPLETO", "DC",
+                                   "PLYMOUTH VALIANT L6 3.7 (70-76)", 374.22, ""]])])
+        kit = PartidaListaProveedor.objects.get(codigo="NAK06878S")
+        self.assertEqual(kit.tipo, "CLUTCH")
+        self.assertEqual(PartidaListaProveedor.objects.get(codigo="FS-100").tipo, "JUEGO")
+        self.assertTrue(kit.vehiculos.filter(armadora="Nissan", anio_desde=1992).exists())
+        self.assertTrue(buscar("tsuru 2003").filter(partida=kit).exists())
+        self.assertNotIn("Plymouth", [a for a, _ in opciones()])
+        producto = agregar_a_catalogo(kit)
+        self.assertEqual(producto.familia.nombre, "Kit de clutch")
